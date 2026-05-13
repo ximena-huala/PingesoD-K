@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: rentabilidad
+
+  # Configuración de conexión a PostgreSQL
+  datasource:
+    url: jdbc:postgresql://localhost:5432/D%26K
+    username: postgres         # cambia por tu usuario de PostgreSQL
+    password: postgres         # cambia por tu contraseña de PostgreSQL
+    driver-class-name: org.postgresql.Driver
+
+  # Configuración de JPA / Hibernate
+  jpa:
+    hibernate:
+      # validate: Hibernate verifica que las entidades coincidan con la BD
+      # No crea ni modifica tablas (Flyway se encarga de eso)
+      ddl-auto: validate
+    show-sql: true             # muestra las queries en consola (útil en desarrollo)
+    properties:
+      hibernate:
+        format_sql: true       # formatea el SQL para que sea legible en consola
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Flyway: versionamiento de la base de datos
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true  # permite migrar una BD que ya tiene tablas
+
+# Configuración JWT
+jwt:
+  # Clave secreta: debe tener mínimo 256 bits (32 caracteres) para HS256
+  # En producción esto debe venir de una variable de entorno
+  secret: dk-rentabilidad-secret-key-2026-muy-segura
+  expiration: 86400000         # 24 horas en milisegundos
+
+# Puerto del servidor
+server:
+  port: 8080
