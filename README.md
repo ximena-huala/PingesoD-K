@@ -5,8 +5,7 @@ Monorepo del proyecto **D&K Integrador**.
 ## Estructura
 
 ```
-├── DK-Backend/   # API Spring Boot (Java 21 + PostgreSQL)
-└── frontend/     # React (próximamente)
+└── DK-Backend/   # API Spring Boot (Java 21 + PostgreSQL)
 ```
 
 ## DK-Backend
