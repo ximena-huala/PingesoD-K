@@ -5,15 +5,15 @@ Monorepo del proyecto **D&K Integrador**.
 ## Estructura
 
 ```
-├── backend/    # API Spring Boot (Java 21 + PostgreSQL)
-└── frontend/   # React (próximamente)
+├── DK-Backend/   # API Spring Boot (Java 21 + PostgreSQL)
+└── frontend/     # React (próximamente)
 ```
 
-## Backend
+## DK-Backend
 
 ```bash
-cd backend
+cd DK-Backend
 ./gradlew bootRun
 ```
 
-API en `http://localhost:8080`. Requiere PostgreSQL según `backend/src/main/resources/application.yml`.
+API en `http://localhost:8080`. Requiere PostgreSQL según `DK-Backend/src/main/resources/application.yml`.
