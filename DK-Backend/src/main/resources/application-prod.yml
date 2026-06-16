@@ -1,0 +1,13 @@
+# Perfil de producción — requiere variables de entorno
+spring:
+  jpa:
+    show-sql: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+server:
+  forward-headers-strategy: framework

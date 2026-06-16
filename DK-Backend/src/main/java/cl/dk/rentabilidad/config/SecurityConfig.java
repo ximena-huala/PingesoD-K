@@ -1,29 +1,37 @@
 package cl.dk.rentabilidad.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.web.cors.CorsConfigurationSource;
+
+import java.util.Arrays;
 
 /**
- * Configuración central de Spring Security.
+ * Configuración de seguridad empresarial para la API REST.
  *
- * La aplicación usa autenticación stateless (sin sesiones) basada en JWT.
- * Cada petición debe incluir el token en el header Authorization.
- *
- * Rutas públicas (sin token):
- *   - POST /api/auth/login → único endpoint abierto
- *
- * Todo lo demás requiere token JWT válido.
+ * <ul>
+ *   <li>Autenticación stateless con JWT</li>
+ *   <li>CORS restrictivo por origen configurado</li>
+ *   <li>Headers de seguridad HTTP</li>
+ *   <li>Swagger solo accesible en perfil {@code dev}</li>
+ *   <li>Endpoints {@code /api/dev/**} abiertos solo en perfil {@code dev} (Falabella)</li>
+ * </ul>
  */
 @Configuration
 @EnableWebSecurity
@@ -31,14 +39,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtFilter jwtFilter;
+    private final JwtAuthenticationEntryPoint authenticationEntryPoint;
+    private final JwtAccessDeniedHandler accessDeniedHandler;
+    private final CorsConfigurationSource corsConfigurationSource;
+    private final Environment environment;
+
+    @Value("${springdoc.swagger-ui.enabled:true}")
+    private boolean swaggerUiEnabled;
 
     /**
      * Cadena de seguridad solo para el perfil dev: deja /api/dev/** abierto sin JWT.
-     *
-     * Esas rutas (las de FalabellaDevController) solo existen en dev, así que esta
-     * cadena también. Fuera de dev ni se crea, y /api/dev/** cae en la cadena
-     * principal que sí pide token. El @Order(1) la pone antes que la general, pero
-     * con securityMatcher solo aplica a /api/dev/**.
      */
     @Bean
     @Order(1)
@@ -53,47 +63,49 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * Configura la cadena de filtros de seguridad.
-     *
-     * Decisiones de diseño:
-     * - CSRF deshabilitado: la app es una API REST stateless, no usa formularios
-     * - Sesiones deshabilitadas: cada petición se autentica con su propio JWT
-     * - BCrypt como encoder: estándar seguro para hashing de contraseñas
-     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // Deshabilitamos CSRF porque usamos JWT, no cookies de sesión
                 .csrf(AbstractHttpConfigurer::disable)
-
-                // Sin sesiones: cada petición es independiente (stateless)
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                // Definimos qué rutas son públicas y cuáles requieren autenticación
-                .authorizeHttpRequests(auth -> auth
-                        // Solo el login es público
-                        .requestMatchers("/api/auth/login").permitAll()
-                        // Todo lo demás requiere token JWT válido
-                        .anyRequest().authenticated()
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
+                .headers(headers -> headers
+                        .contentTypeOptions(Customizer.withDefaults())
+                        .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
+                        .referrerPolicy(referrer ->
+                                referrer.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31_536_000))
+                        .contentSecurityPolicy(csp ->
+                                csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
                 )
-
-                // Agregamos nuestro filtro JWT antes del filtro estándar de Spring
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers("/api/auth/login").permitAll();
+                    if (swaggerHabilitado()) {
+                        auth.requestMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**"
+                        ).permitAll();
+                    }
+                    auth.anyRequest().authenticated();
+                })
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    /**
-     * Bean del encoder de contraseñas con BCrypt.
-     * Se usa en AuthService para comparar la contraseña ingresada
-     * contra el hash almacenado en la base de datos.
-     *
-     * El factor de costo por defecto (10) es adecuado para producción.
-     */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return new BCryptPasswordEncoder(12);
+    }
+
+    private boolean swaggerHabilitado() {
+        return swaggerUiEnabled && Arrays.asList(environment.getActiveProfiles()).contains("dev");
     }
 }

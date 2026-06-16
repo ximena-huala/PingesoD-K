@@ -1,6 +1,7 @@
 package cl.dk.rentabilidad.service;
 
 import cl.dk.rentabilidad.entity.Venta;
+import cl.dk.rentabilidad.exception.ResourceNotFoundException;
 import cl.dk.rentabilidad.repository.VentaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -11,14 +12,10 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Servicio que gestiona el registro y consulta de ventas.
+ * Gestiona el ciclo de vida de las ventas.
  *
- * Las ventas pueden ingresarse de dos formas:
- * 1. Importación de archivos CSV/Excel desde los marketplaces
- * 2. Registro manual para canales sin API disponible
- *
- * Cada vez que se registra una venta, se dispara automáticamente
- * el cálculo de rentabilidad para mantener los datos actualizados.
+ * <p>Cada alta o modificación dispara el recálculo de rentabilidad para mantener
+ * los márgenes sincronizados con el catálogo y los costos del canal.
  */
 @Service
 @RequiredArgsConstructor
@@ -27,34 +24,54 @@ public class VentaService {
     private final VentaRepository ventaRepository;
     private final RentabilidadService rentabilidadService;
 
-    /**
-     * Registra una nueva venta y calcula su rentabilidad inmediatamente.
-     *
-     * @param venta entidad con los datos de la venta
-     * @return venta persistida
-     */
+    public Venta obtenerPorId(UUID id) {
+        return ventaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Venta no encontrada: " + id));
+    }
+
+    /** Registra la venta y calcula su rentabilidad en la misma transacción. */
     @Transactional
     public Venta registrar(Venta venta) {
+        validarVenta(venta);
 
-        // Persistimos la venta primero
         Venta ventaGuardada = ventaRepository.save(venta);
-
-        // Calculamos y persistimos la rentabilidad inmediatamente
-        // para mantener siempre los datos actualizados
         rentabilidadService.calcular(ventaGuardada);
-
         return ventaGuardada;
     }
 
+    /** Actualiza la venta y recalcula la rentabilidad asociada. */
+    @Transactional
+    public Venta actualizar(UUID id, Venta datos) {
+        validarVenta(datos);
+
+        Venta existente = obtenerPorId(id);
+        existente.setCanal(datos.getCanal());
+        existente.setProducto(datos.getProducto());
+        existente.setFechaVenta(datos.getFechaVenta());
+        existente.setPrecioVenta(datos.getPrecioVenta());
+        existente.setCantidad(datos.getCantidad() != null ? datos.getCantidad() : 1);
+        existente.setDescuentoCampana(
+                datos.getDescuentoCampana() != null ? datos.getDescuentoCampana() : existente.getDescuentoCampana());
+        existente.setReferenciaExterna(datos.getReferenciaExterna());
+
+        Venta ventaGuardada = ventaRepository.save(existente);
+        rentabilidadService.calcular(ventaGuardada);
+        return ventaGuardada;
+    }
+
+    /** Elimina la venta y su registro de rentabilidad. */
+    @Transactional
+    public void eliminar(UUID id) {
+        obtenerPorId(id);
+        rentabilidadService.eliminarPorVenta(id);
+        ventaRepository.deleteById(id);
+    }
+
     /**
-     * Filtra ventas según los criterios del dashboard o del reporte Excel.
-     * Todos los parámetros son opcionales: si son null se ignoran.
-     *
-     * @param desde     fecha inicio del rango (requerida)
-     * @param hasta     fecha fin del rango (requerida)
-     * @param canalId   UUID del canal a filtrar (opcional)
-     * @param categoria categoría de producto a filtrar (opcional)
-     * @return lista de ventas que cumplen los filtros
+     * @param desde     inicio del rango (inclusive)
+     * @param hasta     fin del rango (inclusive)
+     * @param canalId   filtro opcional por canal
+     * @param categoria filtro opcional por categoría de producto
      */
     public List<Venta> filtrar(LocalDate desde,
                                LocalDate hasta,
@@ -63,14 +80,22 @@ public class VentaService {
         return ventaRepository.filtrar(desde, hasta, canalId, categoria);
     }
 
-    /**
-     * Retorna todas las ventas de un canal específico.
-     * Útil para la vista de detalle por canal.
-     *
-     * @param canalId UUID del canal
-     * @return lista de ventas del canal
-     */
     public List<Venta> listarPorCanal(UUID canalId) {
         return ventaRepository.findByCanalId(canalId);
+    }
+
+    private void validarVenta(Venta venta) {
+        if (venta.getCanal() == null || venta.getCanal().getId() == null) {
+            throw new IllegalArgumentException("El canal es obligatorio");
+        }
+        if (venta.getProducto() == null || venta.getProducto().getId() == null) {
+            throw new IllegalArgumentException("El producto es obligatorio");
+        }
+        if (venta.getFechaVenta() == null) {
+            throw new IllegalArgumentException("La fecha de venta es obligatoria");
+        }
+        if (venta.getPrecioVenta() == null) {
+            throw new IllegalArgumentException("El precio de venta es obligatorio");
+        }
     }
 }

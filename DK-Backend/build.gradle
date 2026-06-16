@@ -39,6 +39,9 @@ dependencies {
 
 // Apache POI (genera el Excel)
 	implementation 'org.apache.poi:poi-ooxml:5.3.0'
+
+	// Documentación OpenAPI / Swagger UI
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
 }
 
 tasks.named('test') {
@@ -59,6 +62,11 @@ tasks.named('bootRun') {
 	if (System.getProperty('os.name').toLowerCase().contains('windows')) {
 		systemProperty 'javax.net.ssl.trustStoreType', 'Windows-ROOT'
 	}
+}
+
+tasks.register('bcryptHash', JavaExec) {
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'cl.dk.rentabilidad.BcryptHashRunner'
 }
 
 tasks.withType(JavaCompile).configureEach {

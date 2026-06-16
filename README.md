@@ -1,50 +1,71 @@
 # Pingeso D&K — Integrador de rentabilidad
 
-Monorepo del proyecto **D&K Integrador**. Tiene dos partes:
+Monorepo del proyecto **D&K Integrador**:
 
-- `DK-Backend/` — API en Spring Boot (Java 21 + PostgreSQL)
-- `DK-Frontend/` — SPA en React + Vite (UI generada desde Figma)
+```
+├── DK-Backend/    # API Spring Boot (Java 21 + PostgreSQL)
+└── DK-Frontend/   # UI React (Vite)
+```
 
-## Qué necesitas tener instalado
+## Documentación
+
+| Módulo | Descripción |
+|--------|-------------|
+| [DK-Backend/README.md](DK-Backend/README.md) | Instalación, arquitectura, endpoints y Swagger |
+| [DK-Backend/docs/configurar-env.md](DK-Backend/docs/configurar-env.md) | Credenciales Falabella (`.env`) |
+| Swagger UI (con backend corriendo) | http://localhost:8080/swagger-ui.html |
+
+## Requisitos
 
 - Java (JDK) 21
-- PostgreSQL 14 o superior
-- Node.js 20 o superior
+- PostgreSQL 14+
+- Node.js 20+ (solo frontend)
 
-## Cómo levantarlo
+## Inicio rápido — Backend
 
-### 1. Base de datos (solo la primera vez)
+### 1. Base de datos
 
-El backend espera una base de datos llamada `D&K`. Créala con un usuario superusuario
-(la migración inicial usa la extensión `pgcrypto`) corriendo `createdb -U postgres "D&K"`.
+```sql
+CREATE DATABASE dk_app;
+```
 
-Las tablas y los datos iniciales los crea Flyway solo al arrancar el backend (están en
-`DK-Backend/src/main/resources/db/migration/V1__initial_schema.sql`).
+Flyway aplica las migraciones al arrancar.
 
-### 2. Backend
+### 2. Configuración local
 
-Desde `DK-Backend/`, corre `./gradlew bootRun` (en Windows, `.\gradlew.bat bootRun`).
-Queda escuchando en `http://localhost:8080`.
+Copia `DK-Backend/.env.example` → `DK-Backend/.env` y ajusta credenciales, o usa `application-local.yml` (ver `DK-Backend/README.md`).
 
-Las credenciales (base de datos, JWT) salen de variables de entorno con defaults
-pensados para desarrollo local, así que normalmente no tienes que tocar nada. Si tu
-PostgreSQL usa otra contraseña, defínela antes de arrancar: en PowerShell con
-`$env:DB_PASSWORD = "tu-contraseña"` y luego `.\gradlew.bat bootRun`; en Linux o macOS
-con `DB_PASSWORD="tu-contraseña" ./gradlew bootRun`.
+Variables de BD (acepta `DATABASE_*` o `DB_*`):
 
-Las variables que puedes sobrescribir (todas con su default en `application.yml`):
+| Variable | Default |
+|----------|---------|
+| `DATABASE_URL` / `DB_URL` | `jdbc:postgresql://localhost:5432/dk_app` |
+| `DATABASE_USERNAME` / `DB_USERNAME` | `postgres` |
+| `DATABASE_PASSWORD` / `DB_PASSWORD` | (vacío) |
 
-- `DB_URL` — URL JDBC. Por defecto `jdbc:postgresql://localhost:5432/D%26K`; ese `%26`
-  es un `&` escapado, por el nombre "D&K".
-- `DB_USERNAME` / `DB_PASSWORD` — usuario y clave de Postgres (`postgres` / `postgres`).
-- `JWT_SECRET` — clave para firmar los JWT, mínimo 32 caracteres.
-- `SERVER_PORT` — puerto de la API (`8080`).
+### 3. Ejecutar
 
-Para las credenciales de la integración con Falabella, mira
-[`DK-Backend/docs/configurar-env.md`](DK-Backend/docs/configurar-env.md).
+```bash
+cd DK-Backend
+./gradlew bootRun
+```
 
-### 3. Frontend
+API en `http://localhost:8080`.
 
-Desde `DK-Frontend/`, corre `npm install` y luego `npm run dev`. Queda en
-`http://localhost:5173` (Vite). El diseño original está en
-[Figma](https://www.figma.com/design/1ODzwzwUp3txSNWBXfoU63/D-K).
+## Inicio rápido — Frontend
+
+```bash
+cd DK-Frontend
+npm install
+npm run dev
+```
+
+UI en `http://localhost:5173`.
+
+## Integraciones
+
+| Canal | Responsable | Estado |
+|-------|-------------|--------|
+| Bsale (catálogo maestro) | Ximena | Sync de productos + costo base |
+| Falabella (ventas) | Vladimir | Cliente API + endpoints dev |
+| MercadoLibre | Juan | Pendiente |

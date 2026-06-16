@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -17,19 +18,13 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * Filtro JWT que intercepta cada petición HTTP antes de llegar al controller.
- *
- * Proceso:
- * 1. Extrae el token del header Authorization: Bearer {token}
- * 2. Valida que el token sea válido y no haya expirado
- * 3. Carga el usuario desde la BD y lo registra en el SecurityContext
- * 4. Spring Security permite la petición si el usuario está autenticado
- *
- * Este filtro se ejecuta UNA sola vez por petición (OncePerRequestFilter).
+ * Filtro que valida el JWT en cada petición y establece el contexto de seguridad.
  */
 @Component
 @RequiredArgsConstructor
 public class JwtFilter extends OncePerRequestFilter {
+
+    private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtUtil jwtUtil;
     private final UsuarioRepository usuarioRepository;
@@ -40,52 +35,34 @@ public class JwtFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        // 1. Leemos el header Authorization de la petición
         String authHeader = request.getHeader("Authorization");
 
-        // 2. Si no hay header o no empieza con "Bearer ", dejamos pasar sin autenticar
-        //    Spring Security rechazará la petición si el endpoint lo requiere
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 3. Extraemos el token quitando el prefijo "Bearer "
-        String token = authHeader.substring(7);
+        String token = authHeader.substring(BEARER_PREFIX.length());
 
-        // 4. Validamos el token y autenticamos si es válido
         if (jwtUtil.esValido(token)) {
-
-            // Extraemos el email del subject del token
             String email = jwtUtil.extraerEmail(token);
 
-            // Verificamos que el usuario exista en BD y esté activo
             usuarioRepository.findByEmail(email)
-                    .filter(u -> u.getActivo())
+                    .filter(u -> Boolean.TRUE.equals(u.getActivo()))
                     .ifPresent(usuario -> {
+                        var authorities = List.of(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                        var principal = User.withUsername(usuario.getEmail())
+                                .password("[PROTECTED]")
+                                .authorities(authorities)
+                                .build();
 
-                        // Construimos el objeto de autenticación de Spring Security
-                        // Sin roles diferenciados (todos son admin según acuerdo con cliente)
                         UsernamePasswordAuthenticationToken auth =
-                                new UsernamePasswordAuthenticationToken(
-                                        User.withUsername(usuario.getEmail())
-                                                .password("")
-                                                .authorities("ROLE_ADMIN")
-                                                .build(),
-                                        null,
-                                        List.of()
-                                );
-
-                        // Agregamos detalles de la petición (IP, session, etc.)
-                        auth.setDetails(new WebAuthenticationDetailsSource()
-                                .buildDetails(request));
-
-                        // Registramos la autenticación en el contexto de Spring Security
+                                new UsernamePasswordAuthenticationToken(principal, null, authorities);
+                        auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                         SecurityContextHolder.getContext().setAuthentication(auth);
                     });
         }
 
-        // 5. Continuamos con el siguiente filtro en la cadena
         filterChain.doFilter(request, response);
     }
 }

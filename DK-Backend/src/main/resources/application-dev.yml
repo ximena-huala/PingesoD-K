@@ -1,0 +1,18 @@
+# Perfil de desarrollo local — NO usar en producción
+spring:
+  config:
+    import: optional:classpath:application-local.yml
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+jwt:
+  secret: ${JWT_SECRET:dev-only-change-me-32-chars-min!!}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true

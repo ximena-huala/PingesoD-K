@@ -25,4 +25,6 @@ public interface CostoCanalRepository extends JpaRepository<CostoCanal, UUID> {
     );
 
     List<CostoCanal> findByCanalId(UUID canalId);
+
+    boolean existsByIdAndCanal_Id(UUID id, UUID canalId);
 }

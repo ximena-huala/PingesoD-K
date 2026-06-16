@@ -7,6 +7,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Registro de una unidad vendida en un canal.
+ *
+ * <p>Una fila equivale a una unidad vendida. Al persistirse, dispara el cálculo
+ * de {@link Rentabilidad} asociado.
+ */
 @Entity
 @Table(name = "venta")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder

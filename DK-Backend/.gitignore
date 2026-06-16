@@ -36,8 +36,11 @@ out/
 ### VS Code ###
 .vscode/
 
-### Secretos locales (credenciales Falabella, BD, JWT) ###
+### Secretos locales (nunca commitear) ###
+application-local.yml
 .env
+.env.*
+!.env.example
 
 ### Exports de datos del cliente (catálogos, ventas) — no versionar ###
 postman/*.csv

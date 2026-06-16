@@ -4,6 +4,11 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.util.UUID;
 
+/**
+ * Canal por el cual D&K vende sus productos.
+ *
+ * <p>Tipos válidos: {@code MARKETPLACE}, {@code TIENDA_WEB_PROPIA}, {@code TIENDA_FISICA}.
+ */
 @Entity
 @Table(name = "canal_venta")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder

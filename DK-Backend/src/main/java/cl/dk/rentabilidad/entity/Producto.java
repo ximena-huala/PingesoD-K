@@ -6,6 +6,12 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Producto del catálogo maestro de D&K.
+ *
+ * <p>Mapea la tabla {@code producto}. El {@link #sku} es único en toda la empresa
+ * y el {@link #costoBase} representa el costo de adquisición o fabricación.
+ */
 @Entity
 @Table(name = "producto")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -26,6 +32,14 @@ public class Producto {
 
     @Column(name = "costo_base", nullable = false, precision = 12, scale = 2)
     private BigDecimal costoBase;
+
+    /** ID de la variante en Bsale (SKU maestro). */
+    @Column(name = "bsale_variant_id", unique = true)
+    private Integer bsaleVariantId;
+
+    /** ID del producto padre en Bsale. */
+    @Column(name = "bsale_product_id")
+    private Integer bsaleProductId;
 
     @Column(nullable = false)
     private Boolean activo = true;

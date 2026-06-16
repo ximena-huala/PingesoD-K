@@ -1,0 +1,27 @@
+# Copiar como src/main/resources/application-local.yml (ignorado por git).
+# Se carga automáticamente con el perfil dev. Alternativa: variables de entorno en IntelliJ.
+#
+# export SPRING_PROFILES_ACTIVE=prod
+# export DATABASE_URL=jdbc:postgresql://host:5432/dk_app
+# export DATABASE_USERNAME=postgres
+# export DATABASE_PASSWORD=<secreto-fuerte>
+# export JWT_SECRET=<minimo-32-caracteres-aleatorios>
+# export CORS_ALLOWED_ORIGINS=https://app.tuempresa.cl
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/dk_app
+    username: postgres
+    password: CAMBIAR
+
+jwt:
+  secret: CAMBIAR-MINIMO-32-CARACTERES-ALEATORIOS
+  expiration: 28800000
+
+app:
+  cors:
+    allowed-origins: https://app.tuempresa.cl
+  integrations:
+    bsale:
+      enabled: true
+      access-token: CAMBIAR

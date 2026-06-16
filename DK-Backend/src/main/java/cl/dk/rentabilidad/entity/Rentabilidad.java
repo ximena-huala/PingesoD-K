@@ -6,6 +6,12 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Resultado del cálculo de margen para una venta.
+ *
+ * <p>Relación 1:1 con {@link Venta}. Los valores se derivan de:
+ * ingreso neto, costo del producto y costos operacionales vigentes del canal.
+ */
 @Entity
 @Table(name = "rentabilidad")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder

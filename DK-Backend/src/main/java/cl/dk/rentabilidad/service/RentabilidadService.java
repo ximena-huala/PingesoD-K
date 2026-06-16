@@ -94,6 +94,12 @@ public class RentabilidadService {
         return rentabilidadRepository.save(rentabilidad);
     }
 
+    @Transactional
+    public void eliminarPorVenta(UUID ventaId) {
+        rentabilidadRepository.findByVentaId(ventaId)
+                .ifPresent(rentabilidadRepository::delete);
+    }
+
     /**
      * Calcula el costo operacional total para un canal en una fecha dada.
      *

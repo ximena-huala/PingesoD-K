@@ -1,5 +1,6 @@
 package cl.dk.rentabilidad.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
@@ -7,6 +8,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Costo operacional asociado a un canal de venta.
+ *
+ * <p>Puede ser porcentual (comisión) o monto fijo (envío). La vigencia se controla
+ * con {@link #fechaInicio} y {@link #fechaFin}; {@code fechaFin = null} indica costo vigente.
+ */
 @Entity
 @Table(name = "costo_canal")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -18,6 +25,7 @@ public class CostoCanal {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "canal_id", nullable = false)
+    @JsonIgnore
     private CanalVenta canal;
 
     @Column(name = "tipo_costo", nullable = false, length = 50)

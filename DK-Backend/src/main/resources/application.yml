@@ -1,53 +1,38 @@
 spring:
   application:
     name: rentabilidad
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
-  # Carga un .env (KEY=VALOR) desde la carpeta del proyecto, si es que existe.
-  # Sirve para poner FALABELLA_*, DB_* o JWT_SECRET sin tocar archivos del repo.
-  # El "optional:" hace que, si no hay .env, no pase nada. Las variables del
-  # sistema mandan por sobre el .env.
+  # Carga .env local (Falabella, BD, JWT). Las variables del sistema tienen prioridad.
   config:
     import: optional:file:.env[.properties]
 
-  # Configuración de conexión a PostgreSQL
-  # Las credenciales se leen de variables de entorno; los valores tras ":"
-  # son defaults para desarrollo local. Cada integrante puede sobrescribir
-  # DB_PASSWORD / DB_USERNAME / DB_URL en su entorno sin tocar este archivo.
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/D%26K}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    # Soporta DATABASE_* (Spring) y DB_* (.env de Falabella) como alias.
+    url: ${DATABASE_URL:${DB_URL:jdbc:postgresql://localhost:5432/dk_app}}
+    username: ${DATABASE_USERNAME:${DB_USERNAME:postgres}}
+    password: ${DATABASE_PASSWORD:${DB_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
 
-  # Configuración de JPA / Hibernate
   jpa:
     hibernate:
-      # validate: Hibernate verifica que las entidades coincidan con la BD
-      # No crea ni modifica tablas (Flyway se encarga de eso)
       ddl-auto: validate
-    show-sql: true             # muestra las queries en consola (útil en desarrollo)
+    open-in-view: false
     properties:
       hibernate:
-        format_sql: true       # formatea el SQL para que sea legible en consola
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  # Flyway: versionamiento de la base de datos
   flyway:
     enabled: true
     locations: classpath:db/migration
-    baseline-on-migrate: true  # permite migrar una BD que ya tiene tablas
+    baseline-on-migrate: true
 
-# Configuración JWT
 jwt:
-  # Clave secreta: debe tener mínimo 256 bits (32 caracteres) para HS256
-  # En producción esto debe venir de una variable de entorno (JWT_SECRET)
-  secret: ${JWT_SECRET:dk-rentabilidad-secret-key-2026-muy-segura}
-  expiration: ${JWT_EXPIRATION:86400000}   # 24 horas en milisegundos
+  secret: ${JWT_SECRET:}
+  expiration: ${JWT_EXPIRATION:28800000}
 
-# Integración con Falabella. La API Key no viaja en las llamadas, solo firma localmente.
-# Las credenciales salen de variables de entorno o del .env, nunca se ponen acá.
-# Los defaults vacíos dejan que la app arranque aunque alguien no tenga credenciales;
-# si faltan, la llamada a Falabella falla con un error claro.
+# Integración Falabella (solo lectura). Credenciales vía .env o variables de entorno.
 falabella:
   api:
     base-url: https://sellercenter-api.falabella.com
@@ -56,6 +41,31 @@ falabella:
     seller-id: ${FALABELLA_SELLER_ID:}
     version: "1.0"
 
-# Puerto del servidor
 server:
   port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  security:
+    login:
+      max-attempts: ${LOGIN_MAX_ATTEMPTS:5}
+      lockout-minutes: ${LOGIN_LOCKOUT_MINUTES:15}
+  integrations:
+    bsale:
+      enabled: ${BSALE_ENABLED:false}
+      base-url: ${BSALE_BASE_URL:https://api.bsale.cl}
+      access-token: ${BSALE_ACCESS_TOKEN:}
+      page-size: ${BSALE_PAGE_SIZE:50}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
