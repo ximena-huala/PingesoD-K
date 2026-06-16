@@ -43,6 +43,22 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// Mismo cuento que en bootRun: el smoke test le pega a Falabella de verdad,
+	// así que en Windows necesita el almacén de certificados del sistema.
+	if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+		systemProperty 'javax.net.ssl.trustStoreType', 'Windows-ROOT'
+	}
+}
+
+tasks.named('bootRun') {
+	// En Windows, antivirus como Avast se meten en medio del SSL y re-firman los
+	// certificados con su propia CA. Esa CA está en el almacén de Windows pero no
+	// en el de la JVM, así que al llamar a Falabella la app revienta con
+	// "PKIX path building failed". Con Windows-ROOT le decimos a Java que use el
+	// almacén del sistema, igual que el navegador, y deja de quejarse.
+	if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+		systemProperty 'javax.net.ssl.trustStoreType', 'Windows-ROOT'
+	}
 }
 
 tasks.withType(JavaCompile).configureEach {

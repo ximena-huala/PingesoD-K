@@ -2,11 +2,21 @@ spring:
   application:
     name: rentabilidad
 
+  # Carga un .env (KEY=VALOR) desde la carpeta del proyecto, si es que existe.
+  # Sirve para poner FALABELLA_*, DB_* o JWT_SECRET sin tocar archivos del repo.
+  # El "optional:" hace que, si no hay .env, no pase nada. Las variables del
+  # sistema mandan por sobre el .env.
+  config:
+    import: optional:file:.env[.properties]
+
   # Configuración de conexión a PostgreSQL
+  # Las credenciales se leen de variables de entorno; los valores tras ":"
+  # son defaults para desarrollo local. Cada integrante puede sobrescribir
+  # DB_PASSWORD / DB_USERNAME / DB_URL en su entorno sin tocar este archivo.
   datasource:
-    url: jdbc:postgresql://localhost:5432/D%26K
-    username: postgres         # cambia por tu usuario de PostgreSQL
-    password: postgres         # cambia por tu contraseña de PostgreSQL
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/D%26K}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
   # Configuración de JPA / Hibernate
@@ -30,10 +40,22 @@ spring:
 # Configuración JWT
 jwt:
   # Clave secreta: debe tener mínimo 256 bits (32 caracteres) para HS256
-  # En producción esto debe venir de una variable de entorno
-  secret: dk-rentabilidad-secret-key-2026-muy-segura
-  expiration: 86400000         # 24 horas en milisegundos
+  # En producción esto debe venir de una variable de entorno (JWT_SECRET)
+  secret: ${JWT_SECRET:dk-rentabilidad-secret-key-2026-muy-segura}
+  expiration: ${JWT_EXPIRATION:86400000}   # 24 horas en milisegundos
+
+# Integración con Falabella. La API Key no viaja en las llamadas, solo firma localmente.
+# Las credenciales salen de variables de entorno o del .env, nunca se ponen acá.
+# Los defaults vacíos dejan que la app arranque aunque alguien no tenga credenciales;
+# si faltan, la llamada a Falabella falla con un error claro.
+falabella:
+  api:
+    base-url: https://sellercenter-api.falabella.com
+    user-id: ${FALABELLA_USER_ID:}
+    api-key: ${FALABELLA_API_KEY:}
+    seller-id: ${FALABELLA_SELLER_ID:}
+    version: "1.0"
 
 # Puerto del servidor
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}

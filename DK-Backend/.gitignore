@@ -35,3 +35,9 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Secretos locales (credenciales Falabella, BD, JWT) ###
+.env
+
+### Exports de datos del cliente (catálogos, ventas) — no versionar ###
+postman/*.csv

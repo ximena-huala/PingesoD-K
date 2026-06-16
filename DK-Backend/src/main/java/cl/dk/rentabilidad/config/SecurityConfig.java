@@ -3,6 +3,8 @@ package cl.dk.rentabilidad.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -29,6 +31,27 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtFilter jwtFilter;
+
+    /**
+     * Cadena de seguridad solo para el perfil dev: deja /api/dev/** abierto sin JWT.
+     *
+     * Esas rutas (las de FalabellaDevController) solo existen en dev, así que esta
+     * cadena también. Fuera de dev ni se crea, y /api/dev/** cae en la cadena
+     * principal que sí pide token. El @Order(1) la pone antes que la general, pero
+     * con securityMatcher solo aplica a /api/dev/**.
+     */
+    @Bean
+    @Order(1)
+    @Profile("dev")
+    public SecurityFilterChain devFilterChain(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher("/api/dev/**")
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+        return http.build();
+    }
 
     /**
      * Configura la cadena de filtros de seguridad.

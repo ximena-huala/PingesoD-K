@@ -1,0 +1,169 @@
+{
+  "info": {
+    "name": "Falabella D&K — Validación de firma",
+    "description": "Sirve para probar la firma HMAC contra la API real de Falabella sin tocar el código Java. Ojo: Falabella no tiene ambiente de pruebas, todo es producción, así que acá solo hay requests de lectura (Get*).\n\nCómo usarla:\n1. Importa también el environment 'Falabella D&K' y completa userId / apiKey / sellerId.\n2. Corre los requests en orden.\n3. Si te devuelven SuccessResponse con datos, la firma está funcionando.\n4. Si sale E007 (la firma no calza), revisa el encode del timestamp: los ':' tienen que ir como %3A.\n\nNota: GetMetrics puede responder E077 ('no metrics data') según la cuenta. Eso es de la cuenta, no de la firma.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const CryptoJS = require('crypto-js');",
+          "",
+          "const userId = pm.environment.get('userId');",
+          "const apiKey = pm.environment.get('apiKey');",
+          "",
+          "// Timestamp ISO 8601 con hora LOCAL y timezone local.",
+          "// (No usar toISOString(): devuelve hora UTC y al pegarle el offset",
+          "//  local quedaría un instante desplazado en horas.)",
+          "const now = new Date();",
+          "const offsetMin = now.getTimezoneOffset();",
+          "const sign = offsetMin <= 0 ? '+' : '-';",
+          "const pad = (n) => String(n).padStart(2, '0');",
+          "const tz = `${sign}${pad(Math.floor(Math.abs(offsetMin) / 60))}:${pad(Math.abs(offsetMin) % 60)}`;",
+          "const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +",
+          "    `T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}` + tz;",
+          "",
+          "// Parámetros base + extras del request (sin Signature)",
+          "const params = {",
+          "    Action: pm.request.url.query.get('Action'),",
+          "    Format: 'JSON',",
+          "    Timestamp: timestamp,",
+          "    UserID: userId,",
+          "    Version: '1.0'",
+          "};",
+          "pm.request.url.query.each(q => {",
+          "    if (q.key !== 'Signature' && !params[q.key] && q.value && !q.value.startsWith('{{')) {",
+          "        params[q.key] = q.value;",
+          "    }",
+          "});",
+          "",
+          "// Ordenar + encode + concatenar + firmar (HMAC-SHA256 hex lowercase)",
+          "const stringToSign = Object.keys(params).sort()",
+          "    .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))",
+          "    .join('&');",
+          "const signature = CryptoJS.HmacSHA256(stringToSign, apiKey).toString();",
+          "",
+          "// Guardar para diagnóstico (NUNCA registrar la apiKey)",
+          "console.log('stringToSign:', stringToSign);",
+          "",
+          "pm.variables.set('timestamp', encodeURIComponent(timestamp));",
+          "pm.variables.set('signature', signature);",
+          "pm.request.headers.upsert({",
+          "    key: 'User-Agent',",
+          "    value: pm.environment.get('sellerId') + '/Postman/Test'",
+          "});"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+          "",
+          "pm.test('SuccessResponse presente (sin ErrorResponse)', () => {",
+          "    const json = pm.response.json();",
+          "    if (json.ErrorResponse) {",
+          "        const head = json.ErrorResponse.Head || {};",
+          "        throw new Error(head.ErrorCode + ': ' + head.ErrorMessage);",
+          "    }",
+          "    pm.expect(json).to.have.property('SuccessResponse');",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1. GetMetrics (alltime)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/?Action=GetMetrics&Format=JSON&Timestamp={{timestamp}}&UserID={{userId}}&Version=1.0&Signature={{signature}}&StatisticsType=alltime",
+          "host": ["{{baseUrl}}"],
+          "path": [""],
+          "query": [
+            { "key": "Action", "value": "GetMetrics" },
+            { "key": "Format", "value": "JSON" },
+            { "key": "Timestamp", "value": "{{timestamp}}" },
+            { "key": "UserID", "value": "{{userId}}" },
+            { "key": "Version", "value": "1.0" },
+            { "key": "Signature", "value": "{{signature}}" },
+            { "key": "StatisticsType", "value": "alltime" }
+          ]
+        },
+        "description": "Primera prueba. Si devuelve SuccessResponse, la firma anda. Esta cuenta en particular responde E077 ('no hay datos de métricas'): no es error de firma, es que la cuenta no tiene métricas cargadas."
+      }
+    },
+    {
+      "name": "2. GetCategoryTree",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/?Action=GetCategoryTree&Format=JSON&Timestamp={{timestamp}}&UserID={{userId}}&Version=1.0&Signature={{signature}}",
+          "host": ["{{baseUrl}}"],
+          "path": [""],
+          "query": [
+            { "key": "Action", "value": "GetCategoryTree" },
+            { "key": "Format", "value": "JSON" },
+            { "key": "Timestamp", "value": "{{timestamp}}" },
+            { "key": "UserID", "value": "{{userId}}" },
+            { "key": "Version", "value": "1.0" },
+            { "key": "Signature", "value": "{{signature}}" }
+          ]
+        },
+        "description": "Árbol de categorías para tarifas de comisión."
+      }
+    },
+    {
+      "name": "3. GetOrders (desde mayo 2026)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/?Action=GetOrders&Format=JSON&Timestamp={{timestamp}}&UserID={{userId}}&Version=1.0&Signature={{signature}}&CreatedAfter=2026-05-01T00:00:00-04:00",
+          "host": ["{{baseUrl}}"],
+          "path": [""],
+          "query": [
+            { "key": "Action", "value": "GetOrders" },
+            { "key": "Format", "value": "JSON" },
+            { "key": "Timestamp", "value": "{{timestamp}}" },
+            { "key": "UserID", "value": "{{userId}}" },
+            { "key": "Version", "value": "1.0" },
+            { "key": "Signature", "value": "{{signature}}" },
+            { "key": "CreatedAfter", "value": "2026-05-01T00:00:00-04:00" }
+          ]
+        },
+        "description": "Órdenes creadas desde el 1 de mayo de 2026."
+      }
+    },
+    {
+      "name": "4. GetOrderItems (orden 1139186719)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/?Action=GetOrderItems&Format=JSON&Timestamp={{timestamp}}&UserID={{userId}}&Version=1.0&Signature={{signature}}&OrderId=1139186719",
+          "host": ["{{baseUrl}}"],
+          "path": [""],
+          "query": [
+            { "key": "Action", "value": "GetOrderItems" },
+            { "key": "Format", "value": "JSON" },
+            { "key": "Timestamp", "value": "{{timestamp}}" },
+            { "key": "UserID", "value": "{{userId}}" },
+            { "key": "Version", "value": "1.0" },
+            { "key": "Signature", "value": "{{signature}}" },
+            { "key": "OrderId", "value": "1139186719" }
+          ]
+        },
+        "description": "Orden real de validación: debe devolver PaidPrice=50992.00 y ShippingAmount=3990.00 (ingreso bruto $54.982)."
+      }
+    }
+  ]
+}

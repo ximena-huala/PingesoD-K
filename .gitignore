@@ -3,9 +3,9 @@
 *.iml
 .vscode/
 
-# Frontend (cuando se agregue)
-frontend/node_modules/
-frontend/dist/
+# Frontend
+node_modules/
+DK-Frontend/dist/
 
 # Artefactos locales fuera de DK-Backend/.gitignore
 .gradle/
