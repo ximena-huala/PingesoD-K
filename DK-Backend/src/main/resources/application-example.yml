@@ -2,7 +2,7 @@
 # Se carga automáticamente con el perfil dev. Alternativa: variables de entorno en IntelliJ.
 #
 # export SPRING_PROFILES_ACTIVE=prod
-# export DATABASE_URL=jdbc:postgresql://host:5432/dk_app
+# export DATABASE_URL=jdbc:postgresql://host:5432/D%26K
 # export DATABASE_USERNAME=postgres
 # export DATABASE_PASSWORD=<secreto-fuerte>
 # export JWT_SECRET=<minimo-32-caracteres-aleatorios>
@@ -10,7 +10,7 @@
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/dk_app
+    url: jdbc:postgresql://localhost:5432/D%26K
     username: postgres
     password: CAMBIAR
 

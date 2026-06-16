@@ -10,7 +10,7 @@ spring:
 
   datasource:
     # Soporta DATABASE_* (Spring) y DB_* (.env de Falabella) como alias.
-    url: ${DATABASE_URL:${DB_URL:jdbc:postgresql://localhost:5432/dk_app}}
+    url: ${DATABASE_URL:${DB_URL:jdbc:postgresql://localhost:5432/D%26K}}
     username: ${DATABASE_USERNAME:${DB_USERNAME:postgres}}
     password: ${DATABASE_PASSWORD:${DB_PASSWORD:}}
     driver-class-name: org.postgresql.Driver

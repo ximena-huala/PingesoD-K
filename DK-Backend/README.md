@@ -14,21 +14,15 @@ API REST en **Spring Boot 3** + **PostgreSQL** para el sistema de análisis de r
 
 ### 1. Base de datos
 
-Crear la base de datos en PostgreSQL (nombre por defecto: `dk_app`):
+Crear la base de datos en PostgreSQL (nombre por defecto: `D&K`):
 
 ```sql
-CREATE DATABASE dk_app;
+CREATE DATABASE "D&K";
 ```
-
-Si ya tienes la base `D&K`, puedes renombrarla:
-
-```sql
-ALTER DATABASE "D&K" RENAME TO dk_app;
-```
-
-En desarrollo, copia `application-example.yml` → `application-local.yml` con tu usuario y contraseña de PostgreSQL (el archivo está en `.gitignore`).
 
 Flyway aplica automáticamente las migraciones al arrancar la aplicación.
+
+En desarrollo, copia `application-example.yml` → `application-local.yml` con tu usuario y contraseña de PostgreSQL (el archivo está en `.gitignore`).
 
 ### 2. Configuración
 
@@ -43,7 +37,7 @@ export SPRING_PROFILES_ACTIVE=dev
 
 ```bash
 export SPRING_PROFILES_ACTIVE=prod
-export DATABASE_URL=jdbc:postgresql://host:5432/dk_app
+export DATABASE_URL=jdbc:postgresql://host:5432/D%26K
 export DATABASE_USERNAME=postgres
 export DATABASE_PASSWORD=<secreto-fuerte>
 export JWT_SECRET=<minimo-32-caracteres-aleatorios>

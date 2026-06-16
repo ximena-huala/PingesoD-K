@@ -26,7 +26,7 @@ Monorepo del proyecto **D&K Integrador**:
 ### 1. Base de datos
 
 ```sql
-CREATE DATABASE dk_app;
+CREATE DATABASE "D&K";
 ```
 
 Flyway aplica las migraciones al arrancar.
@@ -39,7 +39,7 @@ Variables de BD (acepta `DATABASE_*` o `DB_*`):
 
 | Variable | Default |
 |----------|---------|
-| `DATABASE_URL` / `DB_URL` | `jdbc:postgresql://localhost:5432/dk_app` |
+| `DATABASE_URL` / `DB_URL` | `jdbc:postgresql://localhost:5432/D%26K` |
 | `DATABASE_USERNAME` / `DB_USERNAME` | `postgres` |
 | `DATABASE_PASSWORD` / `DB_PASSWORD` | (vacío) |
 
