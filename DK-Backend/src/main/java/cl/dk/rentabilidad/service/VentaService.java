@@ -1,5 +1,6 @@
 package cl.dk.rentabilidad.service;
 
+import cl.dk.rentabilidad.dto.VentaDto;
 import cl.dk.rentabilidad.entity.Venta;
 import cl.dk.rentabilidad.exception.ResourceNotFoundException;
 import cl.dk.rentabilidad.repository.VentaRepository;
@@ -15,7 +16,9 @@ import java.util.UUID;
  * Gestiona el ciclo de vida de las ventas.
  *
  * <p>Cada alta o modificación dispara el recálculo de rentabilidad para mantener
- * los márgenes sincronizados con el catálogo y los costos del canal.
+ * los márgenes sincronizados con el catálogo y los costos del canal. Las consultas
+ * devuelven {@link VentaDto} (canal y producto ya resueltos) para no arrastrar
+ * entidades con lazy a la capa de serialización.
  */
 @Service
 @RequiredArgsConstructor
@@ -24,27 +27,27 @@ public class VentaService {
     private final VentaRepository ventaRepository;
     private final RentabilidadService rentabilidadService;
 
-    public Venta obtenerPorId(UUID id) {
-        return ventaRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Venta no encontrada: " + id));
+    @Transactional(readOnly = true)
+    public VentaDto obtenerPorId(UUID id) {
+        return VentaDto.de(buscarEntidad(id));
     }
 
     /** Registra la venta y calcula su rentabilidad en la misma transacción. */
     @Transactional
-    public Venta registrar(Venta venta) {
+    public VentaDto registrar(Venta venta) {
         validarVenta(venta);
 
         Venta ventaGuardada = ventaRepository.save(venta);
         rentabilidadService.calcular(ventaGuardada);
-        return ventaGuardada;
+        return VentaDto.de(ventaGuardada);
     }
 
     /** Actualiza la venta y recalcula la rentabilidad asociada. */
     @Transactional
-    public Venta actualizar(UUID id, Venta datos) {
+    public VentaDto actualizar(UUID id, Venta datos) {
         validarVenta(datos);
 
-        Venta existente = obtenerPorId(id);
+        Venta existente = buscarEntidad(id);
         existente.setCanal(datos.getCanal());
         existente.setProducto(datos.getProducto());
         existente.setFechaVenta(datos.getFechaVenta());
@@ -56,13 +59,13 @@ public class VentaService {
 
         Venta ventaGuardada = ventaRepository.save(existente);
         rentabilidadService.calcular(ventaGuardada);
-        return ventaGuardada;
+        return VentaDto.de(ventaGuardada);
     }
 
     /** Elimina la venta y su registro de rentabilidad. */
     @Transactional
     public void eliminar(UUID id) {
-        obtenerPorId(id);
+        buscarEntidad(id);
         rentabilidadService.eliminarPorVenta(id);
         ventaRepository.deleteById(id);
     }
@@ -73,15 +76,24 @@ public class VentaService {
      * @param canalId   filtro opcional por canal
      * @param categoria filtro opcional por categoría de producto
      */
-    public List<Venta> filtrar(LocalDate desde,
-                               LocalDate hasta,
-                               UUID canalId,
-                               String categoria) {
-        return ventaRepository.filtrar(desde, hasta, canalId, categoria);
+    @Transactional(readOnly = true)
+    public List<VentaDto> filtrar(LocalDate desde,
+                                  LocalDate hasta,
+                                  UUID canalId,
+                                  String categoria) {
+        return ventaRepository.filtrar(desde, hasta, canalId, categoria)
+                .stream().map(VentaDto::de).toList();
     }
 
-    public List<Venta> listarPorCanal(UUID canalId) {
-        return ventaRepository.findByCanalId(canalId);
+    @Transactional(readOnly = true)
+    public List<VentaDto> listarPorCanal(UUID canalId) {
+        return ventaRepository.findByCanalId(canalId)
+                .stream().map(VentaDto::de).toList();
+    }
+
+    private Venta buscarEntidad(UUID id) {
+        return ventaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Venta no encontrada: " + id));
     }
 
     private void validarVenta(Venta venta) {

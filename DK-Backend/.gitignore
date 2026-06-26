@@ -42,5 +42,8 @@ application-local.yml
 .env.*
 !.env.example
 
-### Exports de datos del cliente (catálogos, ventas) — no versionar ###
+### Datos del cliente ###
+# postman/ es scratch local y NO se versiona.
 postman/*.csv
+# Los datos canónicos para repoblar SÍ se versionan, en DK-Backend/datos/
+# (decisión del equipo, repo privado). Ver docs/levantar-y-repoblar.md

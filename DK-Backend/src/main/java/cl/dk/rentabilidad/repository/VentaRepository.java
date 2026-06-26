@@ -7,12 +7,16 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface VentaRepository extends JpaRepository<Venta, UUID> {
 
     List<Venta> findByCanalId(UUID canalId);
+
+    /** Para que la sincronización sea idempotente: una venta por OrderItemId del canal. */
+    Optional<Venta> findByReferenciaExterna(String referenciaExterna);
 
     List<Venta> findByFechaVentaBetween(LocalDate desde, LocalDate hasta);
 

@@ -6,23 +6,28 @@ import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Servicio que genera el reporte Excel de rentabilidad.
  *
- * Genera un archivo .xlsx con 3 pestañas según lo acordado con el cliente:
- *   - Pestaña 1: Detalle por producto
- *   - Pestaña 2: Resumen por canal de venta
- *   - Pestaña 3: Resumen por categoría
+ * Genera un .xlsx con 4 pestañas:
+ *   - Por Producto:   una fila por producto, con sus totales agregados.
+ *   - Por Canal:      resumen agrupado por canal de venta.
+ *   - Por Categoría:  resumen agrupado por categoría.
+ *   - Detalle de Ventas: una fila por venta, con todos sus costos desglosados.
  *
- * Se usa Apache POI para la generación del archivo en memoria,
- * que luego se envía como stream de bytes al frontend.
+ * En los resúmenes el margen es ponderado (margen total / ingreso total), que es
+ * el margen real del grupo; en el detalle, el margen es el de cada venta.
  */
 @Service
 @RequiredArgsConstructor
@@ -30,50 +35,102 @@ public class ReporteExcelService {
 
     private final RentabilidadRepository rentabilidadRepository;
 
-    /**
-     * Genera el archivo Excel con los 3 tabs de rentabilidad.
-     *
-     * @param desde     fecha inicio del rango
-     * @param hasta     fecha fin del rango
-     * @param canalId   UUID del canal a filtrar (null = todos)
-     * @param categoria categoría a filtrar (null = todas)
-     * @return archivo Excel como arreglo de bytes listo para descargar
-     */
+    @Transactional(readOnly = true)
     public byte[] generar(LocalDate desde, LocalDate hasta,
                           UUID canalId, String categoria) throws Exception {
 
-        // Obtenemos los datos filtrados de la base de datos
         List<Rentabilidad> datos = rentabilidadRepository
                 .filtrar(desde, hasta, canalId, categoria);
 
-        // Creamos el libro Excel en memoria
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-
-            // Estilo para los headers de cada pestaña
             CellStyle estiloHeader = crearEstiloHeader(workbook);
 
-            // Generamos las 3 pestañas
-            crearPestanaProducto(workbook, datos, estiloHeader);
-            crearPestanaCanal(workbook, datos, estiloHeader);
-            crearPestanaCategoria(workbook, datos, estiloHeader);
+            crearPestanaPorProducto(workbook, datos, estiloHeader);
+            crearResumen(workbook, "Por Canal", "Canal", datos, estiloHeader,
+                    r -> r.getVenta().getCanal().getNombre());
+            crearResumen(workbook, "Por Categoría", "Categoría", datos, estiloHeader,
+                    r -> r.getVenta().getProducto().getCategoria() != null
+                            ? r.getVenta().getProducto().getCategoria()
+                            : "Sin categoría");
+            crearPestanaDetalle(workbook, datos, estiloHeader);
 
-            // Convertimos el libro a bytes para enviarlo como respuesta HTTP
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
             return out.toByteArray();
         }
     }
 
-    /**
-     * Pestaña 1: detalle unitario por producto.
-     * Muestra cada venta con todos sus costos desglosados.
-     */
-    private void crearPestanaProducto(XSSFWorkbook workbook,
-                                      List<Rentabilidad> datos,
-                                      CellStyle estiloHeader) {
+    /** Pestaña agregada: una fila por producto con sus totales. */
+    private void crearPestanaPorProducto(XSSFWorkbook workbook,
+                                         List<Rentabilidad> datos,
+                                         CellStyle estiloHeader) {
         Sheet sheet = workbook.createSheet("Por Producto");
+        String[] headers = {
+                "SKU", "Producto", "Categoría", "Unidades Vendidas",
+                "Ingreso Neto Total", "Costo Total", "Margen Bruto Total", "Margen %"
+        };
+        crearFila(sheet, 0, headers, estiloHeader);
 
-        // Headers de la pestaña
+        datos.stream()
+                .collect(Collectors.groupingBy(r -> r.getVenta().getProducto().getSku()))
+                .forEach((sku, lista) -> {
+                    Row fila = sheet.createRow(sheet.getLastRowNum() + 1);
+                    var prod = lista.get(0).getVenta().getProducto();
+                    int unidades = lista.stream()
+                            .mapToInt(r -> r.getVenta().getCantidad() != null ? r.getVenta().getCantidad() : 1)
+                            .sum();
+                    BigDecimal ingreso = sumar(lista, Rentabilidad::getIngresoNeto);
+                    BigDecimal costo = sumar(lista, Rentabilidad::getCostoTotal);
+                    BigDecimal margen = sumar(lista, Rentabilidad::getMargenBruto);
+
+                    fila.createCell(0).setCellValue(sku);
+                    fila.createCell(1).setCellValue(prod.getNombre());
+                    fila.createCell(2).setCellValue(prod.getCategoria() != null ? prod.getCategoria() : "Sin categoría");
+                    fila.createCell(3).setCellValue(unidades);
+                    fila.createCell(4).setCellValue(ingreso.doubleValue());
+                    fila.createCell(5).setCellValue(costo.doubleValue());
+                    fila.createCell(6).setCellValue(margen.doubleValue());
+                    fila.createCell(7).setCellValue(margenPonderado(margen, ingreso).doubleValue());
+                });
+
+        autoAjustar(sheet, headers.length);
+    }
+
+    /** Pestañas de resumen (Por Canal / Por Categoría): mismo formato, distinta agrupación. */
+    private void crearResumen(XSSFWorkbook workbook, String nombrePestana, String tituloGrupo,
+                              List<Rentabilidad> datos, CellStyle estiloHeader,
+                              Function<Rentabilidad, String> agrupador) {
+        Sheet sheet = workbook.createSheet(nombrePestana);
+        String[] headers = {
+                tituloGrupo, "Total Ventas", "Ingreso Neto Total",
+                "Costo Total", "Margen Bruto Total", "Margen %"
+        };
+        crearFila(sheet, 0, headers, estiloHeader);
+
+        datos.stream()
+                .collect(Collectors.groupingBy(agrupador))
+                .forEach((grupo, lista) -> {
+                    Row fila = sheet.createRow(sheet.getLastRowNum() + 1);
+                    BigDecimal ingreso = sumar(lista, Rentabilidad::getIngresoNeto);
+                    BigDecimal costo = sumar(lista, Rentabilidad::getCostoTotal);
+                    BigDecimal margen = sumar(lista, Rentabilidad::getMargenBruto);
+
+                    fila.createCell(0).setCellValue(grupo);
+                    fila.createCell(1).setCellValue(lista.size());
+                    fila.createCell(2).setCellValue(ingreso.doubleValue());
+                    fila.createCell(3).setCellValue(costo.doubleValue());
+                    fila.createCell(4).setCellValue(margen.doubleValue());
+                    fila.createCell(5).setCellValue(margenPonderado(margen, ingreso).doubleValue());
+                });
+
+        autoAjustar(sheet, headers.length);
+    }
+
+    /** Pestaña de detalle: una fila por venta, con todos sus costos desglosados. */
+    private void crearPestanaDetalle(XSSFWorkbook workbook,
+                                     List<Rentabilidad> datos,
+                                     CellStyle estiloHeader) {
+        Sheet sheet = workbook.createSheet("Detalle de Ventas");
         String[] headers = {
                 "Fecha", "SKU", "Producto", "Categoría", "Canal",
                 "Precio Venta", "Descuento Campaña", "Ingreso Neto",
@@ -82,7 +139,6 @@ public class ReporteExcelService {
         };
         crearFila(sheet, 0, headers, estiloHeader);
 
-        // Filas de datos
         int numFila = 1;
         for (Rentabilidad r : datos) {
             Row fila = sheet.createRow(numFila++);
@@ -101,133 +157,27 @@ public class ReporteExcelService {
             fila.createCell(12).setCellValue(r.getMargenPorcentaje().doubleValue());
         }
 
-        // Ajustamos el ancho de columnas automáticamente
-        for (int i = 0; i < headers.length; i++) {
+        autoAjustar(sheet, headers.length);
+    }
+
+    private BigDecimal sumar(List<Rentabilidad> lista, Function<Rentabilidad, BigDecimal> campo) {
+        return lista.stream().map(campo).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** Margen real del grupo: margen total / ingreso total × 100 (evita dividir por cero). */
+    private BigDecimal margenPonderado(BigDecimal margen, BigDecimal ingreso) {
+        return ingreso.signum() == 0
+                ? BigDecimal.ZERO
+                : margen.divide(ingreso, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+    }
+
+    private void autoAjustar(Sheet sheet, int columnas) {
+        for (int i = 0; i < columnas; i++) {
             sheet.autoSizeColumn(i);
         }
     }
 
-    /**
-     * Pestaña 2: resumen agrupado por canal de venta.
-     * Muestra totales e indicadores por canal.
-     */
-    private void crearPestanaCanal(XSSFWorkbook workbook,
-                                   List<Rentabilidad> datos,
-                                   CellStyle estiloHeader) {
-        Sheet sheet = workbook.createSheet("Por Canal");
-
-        String[] headers = {
-                "Canal", "Total Ventas", "Ingreso Neto Total",
-                "Costo Total", "Margen Bruto Total", "Margen % Promedio"
-        };
-        crearFila(sheet, 0, headers, estiloHeader);
-
-        // Agrupamos los datos por canal
-        datos.stream()
-                .collect(java.util.stream.Collectors.groupingBy(
-                        r -> r.getVenta().getCanal().getNombre()
-                ))
-                .forEach((canal, lista) -> {
-                    int numFila = sheet.getLastRowNum() + 1;
-                    Row fila = sheet.createRow(numFila);
-
-                    // Total de ventas del canal
-                    fila.createCell(0).setCellValue(canal);
-                    fila.createCell(1).setCellValue(lista.size());
-
-                    // Sumamos los valores monetarios
-                    BigDecimal ingresoTotal = lista.stream()
-                            .map(Rentabilidad::getIngresoNeto)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    BigDecimal costoTotal = lista.stream()
-                            .map(Rentabilidad::getCostoTotal)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    BigDecimal margenTotal = lista.stream()
-                            .map(Rentabilidad::getMargenBruto)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-                    // Promedio del margen porcentual
-                    BigDecimal margenPromedio = lista.stream()
-                            .map(Rentabilidad::getMargenPorcentaje)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add)
-                            .divide(BigDecimal.valueOf(lista.size()), 4,
-                                    java.math.RoundingMode.HALF_UP);
-
-                    fila.createCell(2).setCellValue(ingresoTotal.doubleValue());
-                    fila.createCell(3).setCellValue(costoTotal.doubleValue());
-                    fila.createCell(4).setCellValue(margenTotal.doubleValue());
-                    fila.createCell(5).setCellValue(margenPromedio.doubleValue());
-                });
-
-        for (int i = 0; i < headers.length; i++) {
-            sheet.autoSizeColumn(i);
-        }
-    }
-
-    /**
-     * Pestaña 3: resumen agrupado por categoría de producto.
-     */
-    private void crearPestanaCategoria(XSSFWorkbook workbook,
-                                       List<Rentabilidad> datos,
-                                       CellStyle estiloHeader) {
-        Sheet sheet = workbook.createSheet("Por Categoría");
-
-        String[] headers = {
-                "Categoría", "Total Ventas", "Ingreso Neto Total",
-                "Costo Total", "Margen Bruto Total", "Margen % Promedio"
-        };
-        crearFila(sheet, 0, headers, estiloHeader);
-
-        // Agrupamos los datos por categoría
-        datos.stream()
-                .collect(java.util.stream.Collectors.groupingBy(
-                        r -> r.getVenta().getProducto().getCategoria() != null
-                                ? r.getVenta().getProducto().getCategoria()
-                                : "Sin categoría"
-                ))
-                .forEach((categoria, lista) -> {
-                    int numFila = sheet.getLastRowNum() + 1;
-                    Row fila = sheet.createRow(numFila);
-
-                    fila.createCell(0).setCellValue(categoria);
-                    fila.createCell(1).setCellValue(lista.size());
-
-                    BigDecimal ingresoTotal = lista.stream()
-                            .map(Rentabilidad::getIngresoNeto)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    BigDecimal costoTotal = lista.stream()
-                            .map(Rentabilidad::getCostoTotal)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    BigDecimal margenTotal = lista.stream()
-                            .map(Rentabilidad::getMargenBruto)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    BigDecimal margenPromedio = lista.stream()
-                            .map(Rentabilidad::getMargenPorcentaje)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add)
-                            .divide(BigDecimal.valueOf(lista.size()), 4,
-                                    java.math.RoundingMode.HALF_UP);
-
-                    fila.createCell(2).setCellValue(ingresoTotal.doubleValue());
-                    fila.createCell(3).setCellValue(costoTotal.doubleValue());
-                    fila.createCell(4).setCellValue(margenTotal.doubleValue());
-                    fila.createCell(5).setCellValue(margenPromedio.doubleValue());
-                });
-
-        for (int i = 0; i < headers.length; i++) {
-            sheet.autoSizeColumn(i);
-        }
-    }
-
-    /**
-     * Crea una fila de headers con estilo destacado.
-     *
-     * @param sheet      hoja donde se agrega la fila
-     * @param numFila    número de fila (0 = primera)
-     * @param valores    textos de cada celda
-     * @param estilo     estilo visual a aplicar
-     */
-    private void crearFila(Sheet sheet, int numFila,
-                           String[] valores, CellStyle estilo) {
+    private void crearFila(Sheet sheet, int numFila, String[] valores, CellStyle estilo) {
         Row fila = sheet.createRow(numFila);
         for (int i = 0; i < valores.length; i++) {
             Cell celda = fila.createCell(i);
@@ -236,26 +186,15 @@ public class ReporteExcelService {
         }
     }
 
-    /**
-     * Crea el estilo visual para los headers del Excel.
-     * Fondo verde oscuro con texto blanco y negrita.
-     */
     private CellStyle crearEstiloHeader(XSSFWorkbook workbook) {
         CellStyle estilo = workbook.createCellStyle();
-
-        // Fondo verde oscuro (color USACH-ish para consistencia visual)
         estilo.setFillForegroundColor(IndexedColors.DARK_TEAL.getIndex());
         estilo.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-
-        // Texto en negrita y blanco
         Font fuente = workbook.createFont();
         fuente.setBold(true);
         fuente.setColor(IndexedColors.WHITE.getIndex());
         estilo.setFont(fuente);
-
-        // Bordes sutiles
         estilo.setBorderBottom(BorderStyle.THIN);
-
         return estilo;
     }
 }

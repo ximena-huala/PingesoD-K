@@ -45,6 +45,10 @@ public class Venta {
     @Column(name = "referencia_externa", length = 200)
     private String referenciaExterna;
 
+    /** Número de orden del canal (Falabella OrderNumber); permite cruzar con el estado de cuenta. */
+    @Column(name = "numero_orden", length = 50)
+    private String numeroOrden;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

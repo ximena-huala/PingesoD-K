@@ -1,13 +1,18 @@
 package cl.dk.rentabilidad.controller;
 
 import cl.dk.rentabilidad.integration.falabella.FalabellaClient;
+import cl.dk.rentabilidad.integration.falabella.FalabellaSyncService;
+import cl.dk.rentabilidad.integration.falabella.dto.FalabellaSyncResult;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
 
 /**
  * Endpoints para probar a mano que la integración con Falabella funciona,
@@ -23,9 +28,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class FalabellaDevController {
 
     private final FalabellaClient client;
+    private final FalabellaSyncService syncService;
 
-    public FalabellaDevController(FalabellaClient client) {
+    public FalabellaDevController(FalabellaClient client, FalabellaSyncService syncService) {
         this.client = client;
+        this.syncService = syncService;
+    }
+
+    /** Trae las órdenes desde la fecha indicada y las guarda como ventas. */
+    @PostMapping("/sync")
+    public ResponseEntity<FalabellaSyncResult> sync(
+            @RequestParam(defaultValue = "2026-05-01") String desde) {
+        return ResponseEntity.ok(syncService.sincronizarVentas(LocalDate.parse(desde)));
     }
 
     @GetMapping("/metrics")

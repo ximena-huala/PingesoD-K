@@ -24,6 +24,24 @@ public interface CostoCanalRepository extends JpaRepository<CostoCanal, UUID> {
             @Param("fecha") LocalDate fecha
     );
 
+    /**
+     * Costos vigentes que aplican a un producto de una categoría dada: los
+     * específicos de su categoría y los del canal sin categoría (el default).
+     * El servicio se queda con el más específico por tipo de costo.
+     */
+    @Query("""
+        SELECT c FROM CostoCanal c
+        WHERE c.canal.id = :canalId
+          AND c.fechaInicio <= :fecha
+          AND (c.fechaFin IS NULL OR c.fechaFin >= :fecha)
+          AND (c.categoria IS NULL OR c.categoria = :categoria)
+        """)
+    List<CostoCanal> findAplicables(
+            @Param("canalId") UUID canalId,
+            @Param("categoria") String categoria,
+            @Param("fecha") LocalDate fecha
+    );
+
     List<CostoCanal> findByCanalId(UUID canalId);
 
     boolean existsByIdAndCanal_Id(UUID id, UUID canalId);

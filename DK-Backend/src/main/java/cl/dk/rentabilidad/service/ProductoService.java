@@ -141,10 +141,19 @@ public class ProductoService {
                     .activo(activo)
                     .build();
         } else {
+            // El producto ya existía (lo cargó otra fuente, ej. el catálogo de
+            // Falabella). Lo vinculamos con Bsale, pero sin pisar datos buenos con
+            // vacíos: Bsale hoy deja la categoría en null y manda el costo promedio
+            // en 0 para los productos sin stock, así que solo los actualizamos cuando
+            // traen algo real.
             producto.setSku(sku);
             producto.setNombre(nombre);
-            producto.setCategoria(categoria);
-            producto.setCostoBase(costoBase);
+            if (categoria != null && !categoria.isBlank()) {
+                producto.setCategoria(categoria);
+            }
+            if (costoBase != null && costoBase.signum() > 0) {
+                producto.setCostoBase(costoBase);
+            }
             producto.setBsaleVariantId(bsaleVariantId);
             producto.setBsaleProductId(bsaleProductId);
             producto.setActivo(activo);

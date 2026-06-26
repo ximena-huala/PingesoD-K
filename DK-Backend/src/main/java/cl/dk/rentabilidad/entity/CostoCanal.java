@@ -31,6 +31,10 @@ public class CostoCanal {
     @Column(name = "tipo_costo", nullable = false, length = 50)
     private String tipoCosto;
 
+    /** Categoría de producto a la que aplica; null = aplica a todo el canal (default). */
+    @Column(length = 100)
+    private String categoria;
+
     @Column(length = 200)
     private String descripcion;
 
