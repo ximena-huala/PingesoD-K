@@ -47,6 +47,13 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", ex.getMessage()));
     }
 
+    @ExceptionHandler(cl.dk.rentabilidad.integration.bsale.BsaleImportException.class)
+    public ResponseEntity<Map<String, String>> bsaleImportError(
+            cl.dk.rentabilidad.integration.bsale.BsaleImportException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, String>> illegalState(IllegalStateException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

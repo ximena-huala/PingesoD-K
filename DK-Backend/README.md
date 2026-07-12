@@ -283,13 +283,35 @@ Formato de respuesta de error:
 
 | Fuente | Responsable | Qué aporta | Tabla destino |
 |--------|-------------|------------|---------------|
-| **Bsale** | Ximena | SKU (`variant.code`), costo (`averageCost`), nombre | `producto` |
+| **Bsale** | Ximena | SKU, estado, marca, tipo, stock, costo promedio | `producto` |
 | **MercadoLibre** | Juan | Ventas, precio, comisiones, envíos | `venta`, `costo_canal` |
 | **Falabella** | Vladimir | Ventas, precio, comisiones, envíos | `venta`, `costo_canal` |
 
 **Bsale es la fuente maestra del catálogo.** Los marketplaces comparten el mismo SKU definido en Bsale.
 
-### Integración Bsale (implementada)
+### Integración Bsale — carga manual (recomendada)
+
+Sin token de API, exporta desde el panel Bsale y sube los archivos:
+
+| Archivo en Bsale | Módulo | Campos que importa |
+|------------------|--------|-------------------|
+| Productos y servicios | Productos → exportar | SKU, nombre, estado, marca, tipo de producto |
+| Stock actual | Stock → exportar | nombre/SKU, stock total, costo unitario promedio |
+
+```http
+POST /api/integraciones/bsale/import
+Content-Type: multipart/form-data
+Authorization: Bearer {token}
+
+productos: [archivo.xlsx]   (opcional)
+stock:     [archivo.xlsx]   (opcional)
+```
+
+Consultar última importación: `GET /api/integraciones/bsale/import/ultima`
+
+**Nota:** las listas de precio por marketplace (Falabella, MercadoLibre, etc.) se gestionan en Bsale pero **no se importan aún** en esta versión.
+
+### Integración Bsale — API (cuando haya token)
 
 1. Obtener token en Bsale → ayuda@bsale.app o panel de la empresa.
 2. Configurar variables:
@@ -299,20 +321,16 @@ export BSALE_ENABLED=true
 export BSALE_ACCESS_TOKEN=tu_token_bsale
 ```
 
-3. Ejecutar sincronización (requiere JWT):
+3. Ejecutar sincronización:
 
 ```http
 POST /api/integraciones/bsale/sync
 Authorization: Bearer {token}
 ```
 
-4. Consultar última ejecución:
+4. Consultar última ejecución: `GET /api/integraciones/bsale/sync/ultima`
 
-```http
-GET /api/integraciones/bsale/sync/ultima
-```
-
-**Qué hace la sync:**
+**Qué hace la sync API:**
 - Lee variantes activas (`GET /v1/variants.json?state=0`)
 - Por cada variante: SKU → `producto.sku`, costo promedio → `producto.costo_base`
 - Upsert por `bsale_variant_id` o SKU
@@ -320,15 +338,15 @@ GET /api/integraciones/bsale/sync/ultima
 
 ### Próximas fases
 
-| Fase | Integración | Endpoint planificado |
-|------|-------------|----------------------|
-| 2 | Bsale listas de precio | Precio de venta por canal desde Bsale |
-| 3 | MercadoLibre (Juan) | `POST /api/integraciones/mercadolibre/sync` |
-| 4 | Falabella (Vladimir) | `POST /api/integraciones/falabella/sync` |
+| Fase | Integración | Estado |
+|------|-------------|--------|
+| 2 | Bsale listas de precio por canal | Pendiente (manual en Bsale por ahora) |
+| 3 | MercadoLibre (Juan) | Pendiente |
+| 4 | Falabella ventas (Vladimir) | Cliente API listo; sync ventas pendiente |
 
 ## Próximos pasos planificados
 
-- Importación masiva CSV/XLSX (`ImportService`)
-- Integración Bsale (catálogo y costos)
+- Importación masiva CSV/XLSX genérica (`ImportService`)
+- Listas de precio Bsale por marketplace (fase futura, sin integrar aún)
 - Integración APIs de marketplaces (ventas)
 - DTOs de respuesta para evitar exponer entidades JPA directamente

@@ -7,10 +7,25 @@
 -- Para poder cruzar el reporte con nuestras ventas guardamos el número de orden de
 -- Falabella (el reporte usa ese número, no el OrderItemId).
 
-ALTER TABLE venta ADD COLUMN numero_orden VARCHAR(50);
-CREATE INDEX idx_venta_numero_orden ON venta(numero_orden);
+ALTER TABLE venta ADD COLUMN IF NOT EXISTS numero_orden VARCHAR(50);
+CREATE INDEX IF NOT EXISTS idx_venta_numero_orden ON venta(numero_orden);
 
-CREATE TABLE costo_venta (
+-- Bases creadas antes de Flyway tenían costo_venta con otro esquema (tipo_costo/valor).
+-- Si la tabla existe pero no tiene la columna "tipo", la reemplazamos (estaba vacía en dev).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'costo_venta'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'costo_venta' AND column_name = 'tipo'
+    ) THEN
+        DROP TABLE costo_venta;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS costo_venta (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     venta_id   UUID         NOT NULL REFERENCES venta(id) ON DELETE CASCADE,
     tipo       VARCHAR(40)  NOT NULL,   -- COMISION, LOGISTICO, PROMOCION, DEVOLUCION, OTRO
@@ -20,4 +35,4 @@ CREATE TABLE costo_venta (
     CONSTRAINT uq_costo_venta UNIQUE (venta_id, tipo)
 );
 
-CREATE INDEX idx_costo_venta_venta ON costo_venta(venta_id);
+CREATE INDEX IF NOT EXISTS idx_costo_venta_venta ON costo_venta(venta_id);

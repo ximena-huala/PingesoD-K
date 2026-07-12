@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -92,6 +93,11 @@ public class ProductoService {
         existente.setSku(nuevoSku);
         existente.setNombre(datos.getNombre().trim());
         existente.setCategoria(datos.getCategoria());
+        existente.setMarca(datos.getMarca());
+        existente.setTipoProducto(datos.getTipoProducto());
+        if (datos.getStock() != null) {
+            existente.setStock(datos.getStock());
+        }
         existente.setCostoBase(datos.getCostoBase());
         if (datos.getActivo() != null) {
             existente.setActivo(datos.getActivo());
@@ -124,39 +130,99 @@ public class ProductoService {
                                          String categoria,
                                          BigDecimal costoBase,
                                          boolean activo) {
-        Producto producto = productoRepository.findByBsaleVariantId(bsaleVariantId)
-                .or(() -> productoRepository.findBySku(sku))
+        return importarDesdeBsale(sku, nombre, null, null, categoria, activo, null, costoBase,
+                bsaleVariantId, bsaleProductId);
+    }
+
+    /**
+     * Crea o actualiza un producto desde exportación manual de Bsale (sin API).
+     * Los campos {@code null} no sobrescriben valores existentes.
+     *
+     * @return {@code true} si se creó, {@code false} si se actualizó
+     */
+    @Transactional
+    public boolean importarDesdeBsale(String sku,
+                                        String nombre,
+                                        String marca,
+                                        String tipoProducto,
+                                        String categoria,
+                                        Boolean activo,
+                                        BigDecimal stock,
+                                        BigDecimal costoBase) {
+        return importarDesdeBsale(sku, nombre, marca, tipoProducto, categoria, activo, stock, costoBase,
+                null, null);
+    }
+
+    public boolean existePorSku(String sku) {
+        return productoRepository.findBySku(sku.trim()).isPresent();
+    }
+
+    private boolean importarDesdeBsale(String sku,
+                                       String nombre,
+                                       String marca,
+                                       String tipoProducto,
+                                       String categoria,
+                                       Boolean activo,
+                                       BigDecimal stock,
+                                       BigDecimal costoBase,
+                                       Integer bsaleVariantId,
+                                       Integer bsaleProductId) {
+        String skuNormalizado = sku.trim();
+        if (skuNormalizado.isBlank()) {
+            throw new IllegalArgumentException("El SKU es obligatorio");
+        }
+
+        Producto producto = productoRepository.findBySku(skuNormalizado)
+                .or(() -> bsaleVariantId != null
+                        ? productoRepository.findByBsaleVariantId(bsaleVariantId)
+                        : Optional.empty())
                 .orElse(null);
 
         boolean esNuevo = producto == null;
 
         if (esNuevo) {
             producto = Producto.builder()
-                    .sku(sku)
-                    .nombre(nombre)
+                    .sku(skuNormalizado)
+                    .nombre(nombre != null && !nombre.isBlank() ? nombre.trim() : skuNormalizado)
+                    .marca(marca)
+                    .tipoProducto(tipoProducto)
                     .categoria(categoria)
-                    .costoBase(costoBase)
+                    .costoBase(costoBase != null ? costoBase : BigDecimal.ZERO)
+                    .stock(stock != null ? stock : BigDecimal.ZERO)
                     .bsaleVariantId(bsaleVariantId)
                     .bsaleProductId(bsaleProductId)
-                    .activo(activo)
+                    .activo(activo != null ? activo : true)
                     .build();
         } else {
-            // El producto ya existía (lo cargó otra fuente, ej. el catálogo de
-            // Falabella). Lo vinculamos con Bsale, pero sin pisar datos buenos con
-            // vacíos: Bsale hoy deja la categoría en null y manda el costo promedio
-            // en 0 para los productos sin stock, así que solo los actualizamos cuando
-            // traen algo real.
-            producto.setSku(sku);
-            producto.setNombre(nombre);
-            if (categoria != null && !categoria.isBlank()) {
-                producto.setCategoria(categoria);
+            producto.setSku(skuNormalizado);
+            if (nombre != null && !nombre.isBlank()) {
+                producto.setNombre(nombre.trim());
             }
+            if (marca != null && !marca.isBlank()) {
+                producto.setMarca(marca.trim());
+            }
+            if (tipoProducto != null && !tipoProducto.isBlank()) {
+                producto.setTipoProducto(tipoProducto.trim());
+            }
+            if (categoria != null && !categoria.isBlank()) {
+                producto.setCategoria(categoria.trim());
+            }
+            if (activo != null) {
+                producto.setActivo(activo);
+            }
+            if (stock != null) {
+                producto.setStock(stock);
+            }
+            // No pisar costos buenos con 0 (variantes Bsale sin stock)
             if (costoBase != null && costoBase.signum() > 0) {
                 producto.setCostoBase(costoBase);
             }
-            producto.setBsaleVariantId(bsaleVariantId);
-            producto.setBsaleProductId(bsaleProductId);
-            producto.setActivo(activo);
+            if (bsaleVariantId != null) {
+                producto.setBsaleVariantId(bsaleVariantId);
+            }
+            if (bsaleProductId != null) {
+                producto.setBsaleProductId(bsaleProductId);
+            }
         }
 
         productoRepository.save(producto);

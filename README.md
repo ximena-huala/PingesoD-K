@@ -66,6 +66,6 @@ UI en `http://localhost:5173`.
 
 | Canal | Responsable | Estado |
 |-------|-------------|--------|
-| Bsale (catálogo maestro) | Ximena | Sync de productos + costo base |
+| Bsale (catálogo maestro) | Ximena | Carga manual desde exportaciones; API cuando haya token |
 | Falabella (ventas) | Vladimir | Cliente API + endpoints dev |
 | MercadoLibre | Juan | Pendiente |

@@ -30,6 +30,16 @@ public class Producto {
     @Column(length = 100)
     private String categoria;
 
+    @Column(length = 100)
+    private String marca;
+
+    @Column(name = "tipo_producto", length = 100)
+    private String tipoProducto;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal stock = BigDecimal.ZERO;
+
     @Column(name = "costo_base", nullable = false, precision = 12, scale = 2)
     private BigDecimal costoBase;
 
