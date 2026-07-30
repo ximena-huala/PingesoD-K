@@ -32,4 +32,12 @@ public interface VentaRepository extends JpaRepository<Venta, UUID> {
             @Param("canalId")   UUID canalId,
             @Param("categoria") String categoria
     );
+
+    /** Cuántas ventas hay de un canal (para el estado de la integración). */
+    @Query("SELECT COUNT(v) FROM Venta v WHERE v.canal.nombre = :canal")
+    long contarPorCanal(@Param("canal") String canal);
+
+    /** Fecha de la venta más reciente de un canal (null si no hay ventas). */
+    @Query("SELECT MAX(v.fechaVenta) FROM Venta v WHERE v.canal.nombre = :canal")
+    LocalDate ultimaFechaPorCanal(@Param("canal") String canal);
 }

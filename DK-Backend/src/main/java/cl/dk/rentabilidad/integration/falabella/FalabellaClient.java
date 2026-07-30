@@ -5,6 +5,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.net.URI;
 import java.time.Duration;
@@ -84,6 +85,41 @@ public class FalabellaClient {
             .body(String.class);
 
         return parser.unwrapOrThrow(rawBody, action);
+    }
+
+    /**
+     * Hace una llamada con la firma HMAC ADULTERADA a propósito. Sirve para demostrar
+     * que Falabella valida la autenticación: devuelve el JSON de error (E007) tal cual.
+     * Firma bien y después le cambia el último carácter, así la firma deja de calzar.
+     */
+    public String callConFirmaInvalida(String action) {
+        Map<String, String> params = new HashMap<>();
+        params.put("Action", action);
+        params.put("Format", "JSON");
+        params.put("Timestamp", signatureService.generateTimestamp());
+        params.put("UserID", props.userId());
+        params.put("Version", props.version());
+
+        String firma = signatureService.sign(params, props.apiKey());
+        char ultimo = firma.charAt(firma.length() - 1);
+        firma = firma.substring(0, firma.length() - 1) + (ultimo == 'a' ? 'b' : 'a');
+        params.put("Signature", firma);
+
+        String queryString = new TreeMap<>(params).entrySet().stream()
+            .map(e -> signatureService.urlEncode(e.getKey()) + "=" + signatureService.urlEncode(e.getValue()))
+            .collect(Collectors.joining("&"));
+        URI uri = URI.create(props.baseUrl() + "/?" + queryString);
+
+        try {
+            return restClient.get()
+                .uri(uri)
+                .header(HttpHeaders.USER_AGENT, props.userAgent())
+                .retrieve()
+                .body(String.class);
+        } catch (RestClientResponseException e) {
+            // Falabella responde 401 con el JSON de error; devolvemos ese cuerpo.
+            return e.getResponseBodyAsString();
+        }
     }
 
     // ---- Atajos para los endpoints que usamos (todos de lectura) ----

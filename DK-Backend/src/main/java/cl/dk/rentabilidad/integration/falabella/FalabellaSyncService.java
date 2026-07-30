@@ -77,7 +77,7 @@ public class FalabellaSyncService {
         }
         log.info("Sincronización Falabella: {} órdenes desde {}", ordenes.size(), desde);
 
-        int itemsTotal = 0, noEntregados = 0, creadas = 0, actualizadas = 0, sinProducto = 0;
+        int itemsTotal = 0, noEntregados = 0, creadas = 0, actualizadas = 0, sinProducto = 0, ordenesConError = 0;
         List<String> skusSinProducto = new ArrayList<>();
 
         for (JsonNode orden : ordenes) {
@@ -85,7 +85,18 @@ public class FalabellaSyncService {
             String numeroOrden = orden.path("OrderNumber").asText();
             LocalDate fecha = fechaDe(orden.path("CreatedAt").asText());
 
-            for (JsonNode item : nodos(client.getOrderItems(orderId), "OrderItems", "OrderItem")) {
+            List<JsonNode> items;
+            try {
+                items = nodos(client.getOrderItems(orderId), "OrderItems", "OrderItem");
+            } catch (RuntimeException e) {
+                // Algunas órdenes antiguas responden E016 "Invalid Order ID" al pedir sus
+                // items. En vez de abortar todo el sync, se salta esa orden y se sigue.
+                ordenesConError++;
+                pausa();
+                continue;
+            }
+
+            for (JsonNode item : items) {
                 itemsTotal++;
                 if (!"delivered".equalsIgnoreCase(item.path("Status").asText())) {
                     noEntregados++;
@@ -124,6 +135,10 @@ public class FalabellaSyncService {
         if (sinProducto > 0) {
             log.warn("Falabella: {} items sin producto en la base. SKU (muestra): {}",
                 sinProducto, skusSinProducto.stream().limit(15).toList());
+        }
+        if (ordenesConError > 0) {
+            log.warn("Falabella: {} órdenes omitidas por error al pedir sus items (p.ej. E016 en órdenes antiguas).",
+                ordenesConError);
         }
         return new FalabellaSyncResult(ordenes.size(), itemsTotal, noEntregados,
             creadas, actualizadas, sinProducto, skusSinProducto, LocalDateTime.now());

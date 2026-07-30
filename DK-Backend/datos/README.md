@@ -7,6 +7,7 @@ Archivos fuente y semillas para dejar la base con datos desde cero. El paso a pa
 - estado-cuenta-dic-jun.csv y estado-cuenta-nov-dic.csv — estados de cuenta de Falabella; de ahí salen la comisión y la logística reales por venta.
 - seed-productos.sql — generado de los dos primeros. Se carga con `psql -f`.
 - seed-costos.sql — generado de los dos estados de cuenta, cruzando por "Id Artículo". Se carga después de sincronizar las ventas.
+- seed-costo-canal.sql — tarifas de comisión estimadas por categoría (11-20%) para el canal Falabella. Es el respaldo que usa el motor cuando una venta todavía no aparece en el estado de cuenta; sin esto esas ventas quedan con costo operacional en $0.
 
 Los `.sql` son generados, no se editan a mano. Las ventas no están acá: se traen en vivo desde la API de Falabella.
 

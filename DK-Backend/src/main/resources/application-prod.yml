@@ -10,4 +10,10 @@ springdoc:
     enabled: false
 
 server:
+  # El backend solo acepta conexiones locales: nginx (mismo host) hace de proxy
+  # inverso hacia 127.0.0.1:8080. Así 8080 deja de ser alcanzable desde internet
+  # aunque el firewall se configure mal. forward-headers-strategy respeta los
+  # X-Forwarded-* que manda nginx (para que el backend "sepa" que la request vino
+  # por HTTPS).
+  address: 127.0.0.1
   forward-headers-strategy: framework

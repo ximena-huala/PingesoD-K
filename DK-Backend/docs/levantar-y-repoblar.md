@@ -64,7 +64,11 @@ c) Costos reales (comisión y logística por unidad, desde el estado de cuenta):
 
     & $psql -U postgres -d "D&K" -f DK-Backend\datos\seed-costos.sql
 
-d) Recalcular la rentabilidad:
+d) Tarifas de comisión estimadas por categoría (respaldo para las ventas que aún no aparecen en el estado de cuenta; sin esto quedan con costo operacional en $0 y margen inflado):
+
+    & $psql -U postgres -d "D&K" -f DK-Backend\datos\seed-costo-canal.sql
+
+e) Recalcular la rentabilidad:
 
     Invoke-RestMethod -Uri "http://localhost:8080/api/dev/rentabilidad/recalcular" -Method Post
 
@@ -80,3 +84,34 @@ Notas
 -Las próximas veces no hay que instalar ni repoblar nada**: con la base ya cargada, basta el paso 4 para levantar el backend.
 - Los archivos de datos viven en `DK-Backend/datos/`. Si llega un estado de cuenta nuevo, se reemplaza el CSV correspondiente y se vuelve a generar `seed-costos.sql` (el cruce es por "Id Artículo" = `referencia_externa`, por unidad, nunca por orden+SKU). Luego se repiten los pasos 5c y 5d.
 - Los datos de `datos/` son información comercial de D&K. El repo es privado del equipo; aun así, no compartir esos archivos fuera del equipo.
+
+## Solución de problemas
+
+### El backend no arranca: "Migration checksum mismatch for migration version 5"
+
+En el log aparece algo como:
+
+    Migration checksum mismatch for migration version 5
+    Applied to database : -1091040492
+    Resolved locally    : 1919015585
+
+Pasa cuando tu base ya tenía aplicada una versión anterior de la migración V5 y después el archivo cambió (el commit que "corrige V5 para bases legacy"). Flyway ve que el checksum no calza y se niega a arrancar. A quien clona el repo de cero **no le pasa** (la V5 se aplica nueva); solo afecta a bases creadas antes de ese cambio.
+
+Dos formas de resolverlo:
+
+**Opción A — conservar los datos (repair).** Alinea el checksum en el historial de Flyway, sin tocar el esquema ni los datos. Copia del error el número que dice "Resolved locally" y reemplázalo abajo por `<RESOLVED>`:
+
+    $env:PGPASSWORD = "postgres"
+    & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -d "D&K" -c "UPDATE flyway_schema_history SET checksum = <RESOLVED> WHERE version = '5';"
+
+Luego arranca el backend (paso 4); aplicará las migraciones pendientes y levantará normal.
+
+**Opción B — empezar de cero (más simple si no tienes datos que conservar).** Borra y recrea la base; las migraciones se aplican limpias:
+
+    $env:PGPASSWORD = "postgres"
+    & "C:\Program Files\PostgreSQL\17\bin\dropdb.exe" -U postgres "D&K"
+    & "C:\Program Files\PostgreSQL\17\bin\createdb.exe" -U postgres "D&K"
+
+Después repite desde el paso 4 (arrancar) y el paso 5 (repoblar).
+
+La causa de fondo es que se editó una migración ya publicada, en vez de agregar una nueva. Para el futuro conviene no tocar migraciones ya aplicadas: si hace falta un ajuste, se agrega una migración nueva (V7, V8…).
