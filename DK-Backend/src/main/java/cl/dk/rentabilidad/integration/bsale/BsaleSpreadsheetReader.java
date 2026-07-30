@@ -183,14 +183,14 @@ public class BsaleSpreadsheetReader {
     private Set<String> columnasRequeridas(TipoExportacion tipo) {
         return switch (tipo) {
             case PRODUCTOS -> Set.of("nombre");
-            case STOCK -> Set.of("nombre");
+            case STOCK -> Set.of("sku");
         };
     }
 
     private Set<String> columnasOpcionales(TipoExportacion tipo) {
         return switch (tipo) {
             case PRODUCTOS -> Set.of("sku", "estado", "marca", "tipo", "categoria");
-            case STOCK -> Set.of("sku", "stock", "costo");
+            case STOCK -> Set.of("nombre", "variante", "marca", "tipo", "stock", "costo");
         };
     }
 
@@ -204,10 +204,21 @@ public class BsaleSpreadsheetReader {
             mapa.put("tipo", List.of("tipo de producto", "tipo producto", "tipo"));
             mapa.put("categoria", List.of("categoria", "categoría", "familia"));
         } else {
-            mapa.put("sku", List.of("sku", "codigo", "código", "codigo de barras"));
+            mapa.put("sku", List.of("sku"));
             mapa.put("nombre", List.of("producto", "nombre", "descripcion", "descripción"));
-            mapa.put("stock", List.of("total", "stock", "disponible", "cantidad"));
-            mapa.put("costo", List.of("costo unitario promedio", "costo promedio", "costo unitario", "costo"));
+            mapa.put("variante", List.of("variante"));
+            mapa.put("marca", List.of("marca"));
+            mapa.put("tipo", List.of("tipo de producto", "tipo producto", "tipo"));
+            mapa.put("stock", List.of("stock", "cantidad disponible", "disponible", "total"));
+            mapa.put("costo", List.of(
+                    "costo neto prom. unitario",
+                    "costo neto prom unitario",
+                    "ultimo costo",
+                    "último costo",
+                    "costo unitario promedio",
+                    "costo promedio",
+                    "costo unitario",
+                    "costo"));
         }
         return mapa;
     }

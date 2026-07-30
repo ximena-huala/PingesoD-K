@@ -148,7 +148,7 @@ public class BsaleManualImportService {
 
     private ResultadoStock procesarFilaStock(BsaleSpreadsheetReader.FilaImportacion fila) {
         String sku = resolverSku(fila);
-        String nombre = fila.get("nombre");
+        String nombre = construirNombre(fila);
         BigDecimal stock = parsearNumero(fila.get("stock"));
         BigDecimal costo = parsearNumero(fila.get("costo"));
 
@@ -160,8 +160,8 @@ public class BsaleManualImportService {
         boolean esNuevo = productoService.importarDesdeBsale(
                 sku,
                 nombre.isBlank() ? sku : nombre,
-                null,
-                null,
+                fila.get("marca"),
+                fila.get("tipo"),
                 null,
                 true,
                 stock,
@@ -172,6 +172,18 @@ public class BsaleManualImportService {
             return ResultadoStock.CREADO;
         }
         return existia ? ResultadoStock.ACTUALIZADO : ResultadoStock.CREADO;
+    }
+
+    private String construirNombre(BsaleSpreadsheetReader.FilaImportacion fila) {
+        String producto = fila.get("nombre");
+        String variante = fila.get("variante");
+        if (producto.isBlank()) {
+            return variante;
+        }
+        if (variante.isBlank() || producto.toLowerCase().contains(variante.toLowerCase())) {
+            return producto;
+        }
+        return producto + " " + variante;
     }
 
     private String resolverSku(BsaleSpreadsheetReader.FilaImportacion fila) {

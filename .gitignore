@@ -6,6 +6,7 @@
 # Frontend
 node_modules/
 DK-Frontend/dist/
+DK-Frontend/.env
 
 # Artefactos locales fuera de DK-Backend/.gitignore
 .gradle/

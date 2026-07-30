@@ -28,15 +28,19 @@ public class IntegracionSyncLog {
     @Column(nullable = false, length = 20)
     private String estado;
 
+    @Builder.Default
     @Column(name = "productos_creados", nullable = false)
     private Integer productosCreados = 0;
 
+    @Builder.Default
     @Column(name = "productos_actualizados", nullable = false)
     private Integer productosActualizados = 0;
 
+    @Builder.Default
     @Column(name = "productos_omitidos", nullable = false)
     private Integer productosOmitidos = 0;
 
+    @Builder.Default
     @Column(nullable = false)
     private Integer errores = 0;
 

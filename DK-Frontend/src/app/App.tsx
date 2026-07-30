@@ -20,6 +20,12 @@ import {
   Loader2,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import {
+  importarStockBsale,
+  listarProductos,
+  type BsaleImportResult,
+  type Producto,
+} from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +82,34 @@ function buildChartData(rows: SaleRow[]) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, ventas]) => ({ date, ventas }));
 }
+
+function parseCsv(text: string) {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^"|"$/g, "")
+        .split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/)
+        .map((cell) => cell.trim().replace(/^\"|\"$/g, ""))
+    );
+}
+
+function isCsvFile(file: File) {
+  return /\.csv$/i.test(file.name);
+}
+
+function isXlsxFile(file: File) {
+  return /\.xlsx$/i.test(file.name);
+}
+
+function isStockFile(file: File) {
+  return isCsvFile(file) || isXlsxFile(file);
+}
+
+const fmtCl = (n: number) =>
+  "$" + n.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -710,13 +744,20 @@ function SectionCard({ title, annotation, children }: { title: string; annotatio
 
 function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
   const [activeNav, setActiveNav] = useState("Integraciones");
-  const [activeSubNav, setActiveSubNav] = useState("Integraciones API");
+  const [activeSubNav, setActiveSubNav] = useState("Carga CSV / XLSX");
   const [selectedMp, setSelectedMp] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [connStatus, setConnStatus] = useState<ConnStatus>("idle");
   const [toast, setToast] = useState("");
   const [fileName, setFileName] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState("");
+  const [uploadedRows, setUploadedRows] = useState<string[][]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [loadingProductos, setLoadingProductos] = useState(false);
+  const [importResult, setImportResult] = useState<BsaleImportResult | null>(null);
+  const [productos, setProductos] = useState<Producto[]>([]);
   const [dragging, setDragging] = useState(false);
   const [syncStatuses, setSyncStatuses] = useState([
     { name: "MercadoLibre", status: "connected", lastSync: "hace 8 min" },
@@ -732,6 +773,80 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
     { sku: "WMT-1129", mp: "Walmart", pct: "14.0%" },
   ]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  async function cargarProductos() {
+    setLoadingProductos(true);
+    try {
+      const data = await listarProductos(200);
+      setProductos(data);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : "No se pudo cargar el catálogo");
+    } finally {
+      setLoadingProductos(false);
+    }
+  }
+
+  useEffect(() => {
+    cargarProductos();
+  }, []);
+
+  function handleFile(file: File) {
+    setFileError("");
+    setImportResult(null);
+    setFileName(file.name);
+    setSelectedFile(file);
+
+    if (!isStockFile(file)) {
+      setUploadedRows([]);
+      setSelectedFile(null);
+      setFileError("Formato no soportado. Usa .CSV o .XLSX exportado desde Bsale.");
+      return;
+    }
+
+    if (isXlsxFile(file)) {
+      setUploadedRows([]);
+      setToast(`"${file.name}" listo para importar al servidor`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      const rows = parseCsv(text);
+      if (rows.length === 0) {
+        setUploadedRows([]);
+        setFileError("No se encontraron filas válidas en el archivo.");
+        return;
+      }
+      setUploadedRows(rows);
+      setToast(`Archivo "${file.name}" listo para importar`);
+    };
+    reader.onerror = () => {
+      setUploadedRows([]);
+      setFileError("Ocurrió un error leyendo el archivo.");
+    };
+    reader.readAsText(file, "UTF-8");
+  }
+
+  async function handleUpload() {
+    if (!selectedFile) {
+      setToast("Selecciona un archivo primero");
+      return;
+    }
+    setUploading(true);
+    setFileError("");
+    try {
+      const result = await importarStockBsale(selectedFile);
+      setImportResult(result);
+      await cargarProductos();
+      const msg = `Importación OK: ${result.productosCreados} creados, ${result.productosActualizados} actualizados`;
+      setToast(result.errores > 0 ? `${msg}, ${result.errores} errores` : msg);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : "Error al importar el archivo");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function handleConnect() {
     if (!selectedMp) { setToast("Selecciona un marketplace"); return; }
@@ -769,7 +884,7 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
   function handleFileDrop(e: React.DragEvent) {
     e.preventDefault(); setDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) setFileName(file.name);
+    if (file) handleFile(file);
   }
 
   const subNavItems = ["Carga CSV / XLSX", "Integraciones API", "Ajuste Comisiones"];
@@ -837,7 +952,7 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
           <div className="max-w-[860px] mx-auto flex flex-col gap-5">
 
             {/* Section 1: CSV Upload */}
-            <SectionCard title="Carga de Archivo CSV / XLSX" annotation="S1 · Importación Masiva">
+            <SectionCard title="Carga Stock actual Bsale (XLSX / CSV)" annotation="S1 · Importación Masiva">
               <div className="flex flex-col gap-4">
                 <div
                   onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -847,11 +962,11 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                   onClick={() => fileRef.current?.click()}
                 >
                   <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden"
-                    onChange={(e) => { if (e.target.files?.[0]) setFileName(e.target.files[0].name); }} />
+                    onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
                   <Upload size={28} className="text-muted-foreground/50" />
                   <div className="text-center">
                     <p className="text-sm font-medium text-foreground">Arrastra y suelta tu archivo aquí</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">Soporta: .CSV, .XLSX — máx. 25 MB</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Export Bsale «Stock actual» — .XLSX o .CSV, máx. 25 MB</p>
                   </div>
                   <span className="text-[10px] font-mono text-muted-foreground">o haz clic para seleccionar</span>
                 </div>
@@ -859,14 +974,110 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                   <div className="flex-1 h-8 bg-input-background border border-border rounded flex items-center px-3">
                     <span className="text-xs text-muted-foreground font-mono truncate">{fileName || "Ningún archivo seleccionado"}</span>
                   </div>
-                  <PrimaryButton label="Subir archivo" onClick={() => {
-                    if (!fileName) { setToast("Selecciona un archivo primero"); return; }
-                    setToast(`Archivo "${fileName}" cargado correctamente`);
-                  }} />
-                  <SecondaryButton label="Ver plantilla" onClick={() => setToast("Descargando plantilla…")} />
+                  <PrimaryButton
+                    label={uploading ? "Importando…" : "Subir archivo"}
+                    onClick={handleUpload}
+                    disabled={uploading || !selectedFile}
+                  />
+                  <SecondaryButton label="Actualizar catálogo" onClick={cargarProductos} />
+                </div>
+                {fileError ? (
+                  <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {fileError}
+                  </div>
+                ) : null}
+                {importResult ? (
+                  <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    Procesados: {importResult.totalProcesados} · Creados: {importResult.productosCreados} ·
+                    Actualizados: {importResult.productosActualizados} · Omitidos: {importResult.productosOmitidos}
+                    {importResult.errores > 0 ? ` · Errores: ${importResult.errores}` : ""}
+                  </div>
+                ) : null}
+                {importResult && importResult.detalleErrores.length > 0 ? (
+                  <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 max-h-32 overflow-auto">
+                    {importResult.detalleErrores.slice(0, 10).map((err, i) => (
+                      <p key={i}>{err}</p>
+                    ))}
+                  </div>
+                ) : null}
+                {uploadedRows.length > 0 ? (
+                  <div className="mt-4 border border-border rounded-lg bg-white overflow-auto">
+                    <div className="px-4 py-3 border-b border-border bg-muted/50">
+                      <p className="text-sm font-medium text-foreground">Previsualización CSV (cliente)</p>
+                      <p className="text-[11px] text-muted-foreground">Mostrando hasta 5 filas del archivo cargado</p>
+                    </div>
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-muted">
+                        <tr>
+                          {uploadedRows[0].map((header, idx) => (
+                            <th key={idx} className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-muted-foreground">
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {uploadedRows.slice(1, 6).map((row, rowIndex) => (
+                          <tr key={rowIndex} className={rowIndex % 2 === 0 ? "bg-background" : "bg-muted/10"}>
+                            {row.map((cell, cellIndex) => (
+                              <td key={cellIndex} className="px-3 py-2 align-top text-xs text-foreground">
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="p-3 text-[11px] text-muted-foreground">
+                      {uploadedRows.length - 1} fila(s) en el archivo.
+                    </div>
+                  </div>
+                ) : null}
+                <div className="border border-border rounded-lg bg-white overflow-auto">
+                  <div className="px-4 py-3 border-b border-border bg-muted/50 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Catálogo importado</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {loadingProductos ? "Cargando…" : `${productos.length} producto(s) en base de datos`}
+                      </p>
+                    </div>
+                    {loadingProductos ? <Loader2 size={16} className="animate-spin text-muted-foreground" /> : null}
+                  </div>
+                  {productos.length > 0 ? (
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-muted">
+                        <tr>
+                          {["SKU", "Producto", "Marca", "Tipo", "Stock", "Costo neto"].map((h) => (
+                            <th key={h} className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-muted-foreground">
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productos.map((p, i) => (
+                          <tr key={p.id} className={i % 2 === 0 ? "bg-background" : "bg-muted/10"}>
+                            <td className="px-3 py-2 font-mono text-muted-foreground">{p.sku}</td>
+                            <td className="px-3 py-2 text-foreground">{p.nombre}</td>
+                            <td className="px-3 py-2 text-foreground">{p.marca ?? "—"}</td>
+                            <td className="px-3 py-2 text-foreground">{p.tipoProducto ?? "—"}</td>
+                            <td className="px-3 py-2 font-mono">{Number(p.stock).toLocaleString("es-CL")}</td>
+                            <td className="px-3 py-2 font-mono">{fmtCl(Number(p.costoBase))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="px-4 py-6 text-sm text-muted-foreground text-center">
+                      Aún no hay productos. Sube el export «Stock actual» de Bsale para poblar el catálogo.
+                    </p>
+                  )}
                 </div>
                 <div className="bg-muted/50 border border-border rounded p-3">
-                  <p className="text-[10px] font-mono text-muted-foreground">Columnas esperadas: Fecha · Marketplace · SKU · Producto · Precio Venta · Costo Envío · Comisión</p>
+                  <p className="text-[10px] font-mono text-muted-foreground">
+                    Columnas esperadas (Bsale): Tipo de Producto · Producto · Variante · SKU · Stock ·
+                    Costo Neto Prom. Unitario · Marca
+                  </p>
                 </div>
               </div>
             </SectionCard>
@@ -970,7 +1181,7 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [screen, setScreen] = useState(0);
+  const [screen, setScreen] = useState(2);
   return (
     <div className="min-h-screen bg-background" style={{ fontFamily: "Inter, sans-serif" }}>
       <WireframeNav activeScreen={screen} onSelect={setScreen} />
