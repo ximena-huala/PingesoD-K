@@ -20,7 +20,12 @@ import {
   Loader2,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { login, getDetalle, getResumen, getEstadoFalabella, descargarExcel, falabellaOrders, falabellaProducts, falabellaCategories, falabellaBrands, falabellaTestFirma } from "./api";
+import {
+  login, getDetalle, getResumen, getEstadoFalabella, descargarExcel,
+  falabellaOrders, falabellaProducts, falabellaCategories, falabellaBrands, falabellaTestFirma,
+  getCanales, getCostosCanal, crearCostoCanal, actualizarCostoCanal, eliminarCostoCanal,
+  TIPOS_COSTO, type CanalVenta, type CostoCanal, type TipoCosto,
+} from "./api";
 import { importarStockBsale, listarProductos, type BsaleImportResult, type Producto } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1102,13 +1107,108 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
     { name: "Shopify", status: "disconnected", lastSync: "pendiente" },
     { name: "Tiendanube", status: "disconnected", lastSync: "pendiente" },
   ]);
-  const [commSku, setCommSku] = useState("");
-  const [commMp, setCommMp] = useState("");
-  const [commPct, setCommPct] = useState("");
-  const [overrides, setOverrides] = useState([
-    { sku: "MLU-4482", mp: "MercadoLibre", pct: "11.5%" },
-    { sku: "WMT-1129", mp: "Walmart", pct: "14.0%" },
-  ]);
+  // ─── Comisiones por canal (real, conectado a /api/canales) ────────────────
+  const [canales, setCanales] = useState<CanalVenta[]>([]);
+  const [canalesError, setCanalesError] = useState("");
+  const [selectedCanalId, setSelectedCanalId] = useState("");
+  const [costos, setCostos] = useState<CostoCanal[]>([]);
+  const [costosLoading, setCostosLoading] = useState(false);
+  const [costosError, setCostosError] = useState("");
+  const [editingCostoId, setEditingCostoId] = useState<string | null>(null);
+  const [commTipo, setCommTipo] = useState<TipoCosto>("COMISION_PORCENTAJE");
+  const [commCategoria, setCommCategoria] = useState("");
+  const [commValor, setCommValor] = useState("");
+  const [commEsPorcentaje, setCommEsPorcentaje] = useState(true);
+  const [commFechaInicio, setCommFechaInicio] = useState("");
+  const [commFechaFin, setCommFechaFin] = useState("");
+  const [savingCosto, setSavingCosto] = useState(false);
+
+  useEffect(() => {
+    getCanales()
+      .then((data) => {
+        setCanales(data);
+        if (data.length > 0) setSelectedCanalId((prev) => prev || data[0].id);
+      })
+      .catch((err) => setCanalesError(err instanceof Error ? err.message : "No se pudieron cargar los canales"));
+  }, []);
+
+  function cargarCostos(canalId: string) {
+    if (!canalId) return;
+    setCostosLoading(true);
+    setCostosError("");
+    getCostosCanal(canalId)
+      .then(setCostos)
+      .catch((err) => setCostosError(err instanceof Error ? err.message : "No se pudieron cargar los costos"))
+      .finally(() => setCostosLoading(false));
+  }
+
+  useEffect(() => {
+    if (selectedCanalId) cargarCostos(selectedCanalId);
+  }, [selectedCanalId]);
+
+  function limpiarFormularioComision() {
+    setEditingCostoId(null);
+    setCommTipo("COMISION_PORCENTAJE");
+    setCommCategoria("");
+    setCommValor("");
+    setCommEsPorcentaje(true);
+    setCommFechaInicio("");
+    setCommFechaFin("");
+  }
+
+  function editarCosto(costo: CostoCanal) {
+    setEditingCostoId(costo.id);
+    setCommTipo(costo.tipoCosto);
+    setCommCategoria(costo.categoria ?? "");
+    setCommValor(String(costo.valor));
+    setCommEsPorcentaje(costo.esPorcentaje);
+    setCommFechaInicio(costo.fechaInicio ?? "");
+    setCommFechaFin(costo.fechaFin ?? "");
+  }
+
+  async function handleSaveCommission() {
+    if (!selectedCanalId) { setToast("Selecciona un canal"); return; }
+    const valorNum = Number(commValor.replace(",", "."));
+    if (!commValor || Number.isNaN(valorNum)) { setToast("Ingresa un valor numérico válido"); return; }
+
+    const payload = {
+      tipoCosto: commTipo,
+      categoria: commCategoria.trim() || null,
+      valor: valorNum,
+      esPorcentaje: commEsPorcentaje,
+      fechaInicio: commFechaInicio || undefined,
+      fechaFin: commFechaFin || null,
+    };
+
+    setSavingCosto(true);
+    try {
+      if (editingCostoId) {
+        await actualizarCostoCanal(selectedCanalId, editingCostoId, payload);
+        setToast("Costo actualizado");
+      } else {
+        await crearCostoCanal(selectedCanalId, payload);
+        setToast("Costo agregado");
+      }
+      limpiarFormularioComision();
+      cargarCostos(selectedCanalId);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "No se pudo guardar el costo");
+    } finally {
+      setSavingCosto(false);
+    }
+  }
+
+  async function handleEliminarCosto(costoId: string) {
+    if (!selectedCanalId) return;
+    try {
+      await eliminarCostoCanal(selectedCanalId, costoId);
+      setToast("Costo eliminado");
+      if (editingCostoId === costoId) limpiarFormularioComision();
+      cargarCostos(selectedCanalId);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "No se pudo eliminar el costo");
+    }
+  }
   const fileRef = useRef<HTMLInputElement>(null);
   const [apiResp, setApiResp] = useState<{ endpoint: string; time: string; ms: number; resumen: string; ok: boolean; body: string } | null>(null);
   const [apiLoading, setApiLoading] = useState("");
@@ -1190,13 +1290,6 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
       setSyncStatuses((prev) => prev.map((s) => s.name === name ? { ...s, status: "connected", lastSync: "justo ahora" } : s));
       setToast(`${name} sincronizado`);
     }, 2000);
-  }
-
-  function handleSaveCommission() {
-    if (!commSku || !commMp || !commPct) { setToast("Completa todos los campos"); return; }
-    setOverrides((prev) => [...prev.filter((o) => !(o.sku === commSku && o.mp === commMp)), { sku: commSku, mp: commMp, pct: commPct + "%" }]);
-    setCommSku(""); setCommMp(""); setCommPct("");
-    setToast("Ajuste de comisión guardado");
   }
 
   async function cargarProductos() {
@@ -1620,37 +1713,110 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
               </div>
             </SectionCard>
 
-            {/* Section 3: Commission override */}
-            <SectionCard title="Ajuste Manual de Comisiones" annotation="S3 · Override por SKU">
-              <div className="grid grid-cols-3 gap-4">
-                <InputField label="SKU / Producto" placeholder="Ej: MLU-4482" value={commSku} onChange={setCommSku} />
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-foreground">Marketplace</label>
-                  <Dropdown options={MARKETPLACE_LIST} value={commMp} onChange={setCommMp} placeholder="Seleccionar…" />
-                </div>
-                <InputField label="% Comisión" placeholder="12.00" value={commPct} onChange={setCommPct} />
-              </div>
-              <div className="mt-4 flex items-center gap-3">
-                <PrimaryButton label="Guardar ajuste" onClick={handleSaveCommission} />
-                <SecondaryButton label="Limpiar campos" onClick={() => { setCommSku(""); setCommMp(""); setCommPct(""); }} />
-                <span className="text-[10px] font-mono text-muted-foreground ml-2">⚠ Afecta únicamente al SKU especificado</span>
-              </div>
-              <div className="mt-4 border border-border rounded overflow-hidden">
-                <div className="bg-muted px-3 py-2 border-b border-border">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Ajustes activos ({overrides.length})</p>
-                </div>
-                {overrides.length === 0 ? (
-                  <p className="px-4 py-4 text-[11px] font-mono text-muted-foreground text-center">Sin ajustes activos</p>
-                ) : overrides.map((row) => (
-                  <div key={row.sku + row.mp} className="flex items-center px-3 py-2 border-b border-border last:border-0 text-[11px]">
-                    <span className="font-mono text-muted-foreground w-28">{row.sku}</span>
-                    <span className="text-foreground flex-1">{row.mp}</span>
-                    <span className="font-mono text-foreground font-medium">{row.pct}</span>
-                    <button onClick={() => setOverrides((p) => p.filter((o) => !(o.sku === row.sku && o.mp === row.mp)))}
-                      className="ml-4 text-[10px] text-muted-foreground underline hover:text-foreground">Eliminar</button>
+            {/* Section 3: Comisiones y costos por canal (real, GET/POST/PUT/DELETE /api/canales) */}
+            <SectionCard title="Comisiones y Costos por Canal" annotation="S3 · Conectado a /api/canales">
+              {canalesError ? (
+                <p className="text-[11px] font-mono text-destructive">{canalesError}</p>
+              ) : (
+                <>
+                  <div className="flex items-end gap-4">
+                    <div className="flex flex-col gap-1 w-64">
+                      <label className="text-xs font-medium text-foreground">Canal</label>
+                      <Dropdown
+                        options={canales.map((c) => c.nombre)}
+                        value={canales.find((c) => c.id === selectedCanalId)?.nombre ?? ""}
+                        onChange={(nombre) => {
+                          const canal = canales.find((c) => c.nombre === nombre);
+                          if (canal) { setSelectedCanalId(canal.id); limpiarFormularioComision(); }
+                        }}
+                        placeholder="Seleccionar canal…"
+                      />
+                    </div>
+                    {selectedCanalId && (
+                      <span className="text-[10px] font-mono text-muted-foreground pb-2">
+                        {canales.find((c) => c.id === selectedCanalId)?.tipo}
+                      </span>
+                    )}
                   </div>
-                ))}
-              </div>
+
+                  <div className="mt-4 border border-border rounded overflow-hidden">
+                    <div className="bg-muted px-3 py-2 border-b border-border flex items-center">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Costos vigentes {costosLoading ? "· cargando…" : `(${costos.length})`}
+                      </p>
+                    </div>
+                    {costosError ? (
+                      <p className="px-4 py-4 text-[11px] font-mono text-destructive text-center">{costosError}</p>
+                    ) : !costosLoading && costos.length === 0 ? (
+                      <p className="px-4 py-4 text-[11px] font-mono text-muted-foreground text-center">Este canal no tiene costos configurados</p>
+                    ) : costos.map((c) => (
+                      <div key={c.id} className="flex items-center px-3 py-2 border-b border-border last:border-0 text-[11px]">
+                        <span className="text-foreground w-44">{TIPOS_COSTO.find((t) => t.value === c.tipoCosto)?.label ?? c.tipoCosto}</span>
+                        <span className="font-mono text-muted-foreground w-28">{c.categoria || "Todo el canal"}</span>
+                        <span className="font-mono text-foreground font-medium w-20">
+                          {c.esPorcentaje ? `${c.valor}%` : fmt(c.valor)}
+                        </span>
+                        <span className="font-mono text-muted-foreground flex-1">
+                          desde {c.fechaInicio} {c.fechaFin ? `hasta ${c.fechaFin}` : "(vigente)"}
+                        </span>
+                        <button onClick={() => editarCosto(c)}
+                          className="ml-3 text-[10px] text-muted-foreground underline hover:text-foreground">Editar</button>
+                        <button onClick={() => handleEliminarCosto(c.id)}
+                          className="ml-3 text-[10px] text-muted-foreground underline hover:text-foreground">Eliminar</button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      {editingCostoId ? "Editar costo" : "Agregar costo"}
+                    </p>
+                    <div className="grid grid-cols-4 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-foreground">Tipo de costo</label>
+                        <Dropdown
+                          options={TIPOS_COSTO.map((t) => t.label)}
+                          value={TIPOS_COSTO.find((t) => t.value === commTipo)?.label ?? ""}
+                          onChange={(label) => {
+                            const t = TIPOS_COSTO.find((x) => x.label === label);
+                            if (t) { setCommTipo(t.value); setCommEsPorcentaje(t.esPorcentajeDefault); }
+                          }}
+                        />
+                      </div>
+                      <InputField label="Categoría (opcional)" placeholder="Ej: Electrohogar — vacío = todo el canal" value={commCategoria} onChange={setCommCategoria} />
+                      <InputField label={commEsPorcentaje ? "Valor (%)" : "Valor ($)"} placeholder="12.00" value={commValor} onChange={setCommValor} />
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-foreground">Unidad</label>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setCommEsPorcentaje(true)}
+                            className={`flex-1 rounded border px-2 py-1.5 text-xs ${commEsPorcentaje ? "bg-accent border-accent text-foreground font-medium" : "border-border text-muted-foreground"}`}
+                          >%</button>
+                          <button
+                            onClick={() => setCommEsPorcentaje(false)}
+                            className={`flex-1 rounded border px-2 py-1.5 text-xs ${!commEsPorcentaje ? "bg-accent border-accent text-foreground font-medium" : "border-border text-muted-foreground"}`}
+                          >$ fijo</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4 mt-3">
+                      <InputField label="Vigente desde" type="date" value={commFechaInicio} onChange={setCommFechaInicio} />
+                      <InputField label="Vigente hasta (opcional)" type="date" value={commFechaFin} onChange={setCommFechaFin} />
+                    </div>
+                    <div className="mt-4 flex items-center gap-3">
+                      <PrimaryButton
+                        label={savingCosto ? "Guardando…" : editingCostoId ? "Guardar cambios" : "Agregar costo"}
+                        onClick={handleSaveCommission}
+                        disabled={savingCosto || !selectedCanalId}
+                      />
+                      <SecondaryButton label="Cancelar" onClick={limpiarFormularioComision} />
+                      <span className="text-[10px] font-mono text-muted-foreground ml-2">
+                        Afecta el cálculo de rentabilidad de todas las ventas del canal desde la fecha de vigencia
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
             </SectionCard>
 
           </div>

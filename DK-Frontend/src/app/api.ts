@@ -24,13 +24,39 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function parseErrorBody(res: Response, path: string): Promise<string> {
+  try {
+    const text = await res.text();
+    if (!text) return `Error ${res.status} en ${path}`;
+    const json = JSON.parse(text) as { message?: string; error?: string };
+    return json.message ?? json.error ?? text;
+  } catch {
+    return `Error ${res.status} en ${path}`;
+  }
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
   if (res.status === 401) {
     logout();
     throw new Error("Sesión expirada, vuelve a iniciar sesión");
   }
-  if (!res.ok) throw new Error(`Error ${res.status} en ${path}`);
+  if (!res.ok) throw new Error(await parseErrorBody(res, path));
+  return res.json() as Promise<T>;
+}
+
+async function sendJson<T>(path: string, method: "POST" | "PUT" | "DELETE", body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    logout();
+    throw new Error("Sesión expirada, vuelve a iniciar sesión");
+  }
+  if (!res.ok) throw new Error(await parseErrorBody(res, path));
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -148,4 +174,76 @@ export async function importarBsale(archivo: File, tipo: "productos" | "stock"):
   });
   if (!res.ok) throw new Error(`Error ${res.status} en la importación`);
   return res.json();
+}
+
+// ─── Canales de venta y comisiones ───────────────────────────────────────────
+// Corresponde a CanalController/CanalService del backend (/api/canales).
+// Un CanalVenta es un marketplace/tienda (ej: MercadoLibre, Falabella).
+// Cada canal tiene una lista de CostoCanal (comisión %, envío, logística, etc.)
+// con vigencia por fecha; fechaFin = null significa "vigente".
+
+export type TipoCosto =
+  | "COMISION_PORCENTAJE"
+  | "COSTO_ENVIO_FIJO"
+  | "COSTO_ENVIO_PORCENTAJE"
+  | "COSTO_LOGISTICO"
+  | "PUBLICIDAD"
+  | "OTRO";
+
+export const TIPOS_COSTO: { value: TipoCosto; label: string; esPorcentajeDefault: boolean }[] = [
+  { value: "COMISION_PORCENTAJE", label: "Comisión (%)", esPorcentajeDefault: true },
+  { value: "COSTO_ENVIO_FIJO", label: "Envío (monto fijo)", esPorcentajeDefault: false },
+  { value: "COSTO_ENVIO_PORCENTAJE", label: "Envío (%)", esPorcentajeDefault: true },
+  { value: "COSTO_LOGISTICO", label: "Logística / Fulfillment", esPorcentajeDefault: false },
+  { value: "PUBLICIDAD", label: "Publicidad", esPorcentajeDefault: false },
+  { value: "OTRO", label: "Otro", esPorcentajeDefault: false },
+];
+
+export type CanalVenta = {
+  id: string;
+  nombre: string;
+  tipo: "MARKETPLACE" | "TIENDA_WEB_PROPIA" | "TIENDA_FISICA";
+  activo: boolean;
+};
+
+export type CostoCanal = {
+  id: string;
+  tipoCosto: TipoCosto;
+  categoria: string | null;
+  descripcion: string | null;
+  valor: number;
+  esPorcentaje: boolean;
+  fechaInicio: string; // yyyy-MM-dd
+  fechaFin: string | null;
+  createdAt?: string;
+};
+
+export type CostoCanalInput = {
+  tipoCosto: TipoCosto;
+  categoria?: string | null;
+  descripcion?: string | null;
+  valor: number;
+  esPorcentaje: boolean;
+  fechaInicio?: string;
+  fechaFin?: string | null;
+};
+
+export function getCanales(): Promise<CanalVenta[]> {
+  return getJson<CanalVenta[]>("/api/canales");
+}
+
+export function getCostosCanal(canalId: string): Promise<CostoCanal[]> {
+  return getJson<CostoCanal[]>(`/api/canales/${canalId}/costos`);
+}
+
+export function crearCostoCanal(canalId: string, costo: CostoCanalInput): Promise<CostoCanal> {
+  return sendJson<CostoCanal>(`/api/canales/${canalId}/costos`, "POST", costo);
+}
+
+export function actualizarCostoCanal(canalId: string, costoId: string, costo: CostoCanalInput): Promise<CostoCanal> {
+  return sendJson<CostoCanal>(`/api/canales/${canalId}/costos/${costoId}`, "PUT", costo);
+}
+
+export function eliminarCostoCanal(canalId: string, costoId: string): Promise<void> {
+  return sendJson<void>(`/api/canales/${canalId}/costos/${costoId}`, "DELETE");
 }
