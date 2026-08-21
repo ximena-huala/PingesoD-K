@@ -11,3 +11,6 @@ DK-Frontend/.env
 # Artefactos locales fuera de DK-Backend/.gitignore
 .gradle/
 build/
+
+# Docker: .env raíz para compose (contiene secretos, NO versionar)
+/.env

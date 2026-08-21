@@ -1,0 +1,55 @@
+# Levanta todo el sistema D&K con un comando:  docker compose up --build
+#
+#   db       → PostgreSQL 17, poblado desde el dump (docker/postgres-initdb/)
+#   backend  → Spring Boot (oculto en la red interna, no expuesto al host)
+#   frontend → nginx sirve el build y hace de proxy a /api → backend
+#
+# App disponible en:  http://localhost:8081/   (login: kevin@dk.cl / changeme)
+name: dk
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: dk
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - ./docker/postgres-initdb:/docker-entrypoint-initdb.d:ro   # carga el dump al primer arranque
+      - dk_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dk"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build: ./DK-Backend
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      # El dump trae el esquema hasta V6; Flyway aplica las migraciones nuevas
+      # (V7 en adelante) encima, asi el Docker no se queda atras del codigo.
+      SPRING_FLYWAY_ENABLED: "true"
+      DATABASE_URL: jdbc:postgresql://db:5432/dk
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: ${DB_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET:-clave-de-desarrollo-para-docker-cambiar-en-produccion-0123456789ABCDEF}
+      CORS_ALLOWED_ORIGINS: http://localhost:8081
+      # Falabella es opcional: sin credenciales la app arranca igual (el dashboard
+      # funciona con los datos del dump; el Explorador en vivo necesita estas claves).
+      FALABELLA_USER_ID: ${FALABELLA_USER_ID:-}
+      FALABELLA_API_KEY: ${FALABELLA_API_KEY:-}
+      FALABELLA_SELLER_ID: ${FALABELLA_SELLER_ID:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./DK-Frontend
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
+
+volumes:
+  dk_pgdata:

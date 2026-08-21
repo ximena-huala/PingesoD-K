@@ -5,8 +5,8 @@ import cl.dk.rentabilidad.integration.bsale.BsaleManualImportService;
 import cl.dk.rentabilidad.integration.bsale.dto.BsaleSyncResultDto;
 import cl.dk.rentabilidad.service.ProductoService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,19 +20,22 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 /**
- * Endpoints de desarrollo para probar la carga Bsale sin JWT (solo perfil dev).
+ * Carga de Stock actual de Bsale y consulta del catálogo de productos.
+ *
+ * <p>Requiere JWT y está disponible en todos los perfiles (dev y prod). Reemplaza
+ * al antiguo {@code /api/dev/bsale}, que solo existía en perfil dev y sin autenticación.
  */
-@Tag(name = "Dev Bsale", description = "Importación manual y catálogo sin autenticación (solo dev)")
+@Tag(name = "Bsale", description = "Importación de Stock actual y catálogo de productos")
+@SecurityRequirement(name = "bearerAuth")
 @RestController
-@RequestMapping("/api/dev/bsale")
-@Profile("dev")
-public class BsaleDevController {
+@RequestMapping("/api/bsale")
+public class BsaleStockController {
 
     private final BsaleManualImportService bsaleManualImportService;
     private final ProductoService productoService;
 
-    public BsaleDevController(BsaleManualImportService bsaleManualImportService,
-                              ProductoService productoService) {
+    public BsaleStockController(BsaleManualImportService bsaleManualImportService,
+                                ProductoService productoService) {
         this.bsaleManualImportService = bsaleManualImportService;
         this.productoService = productoService;
     }
