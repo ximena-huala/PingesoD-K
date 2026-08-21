@@ -41,7 +41,7 @@ dependencies {
 	implementation 'org.apache.poi:poi-ooxml:5.3.0'
 
 	// Documentación OpenAPI / Swagger UI
-	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
 }
 
 tasks.named('test') {
