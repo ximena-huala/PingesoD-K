@@ -1,0 +1,36 @@
+# Dependabot: escaneo automático de vulnerabilidades y actualizaciones.
+# Revisa semanalmente las dependencias del frontend (npm) y del backend (Gradle)
+# y abre PRs cuando hay una versión con parche de seguridad. No bloquea builds:
+# solo crea alertas/PRs que el equipo revisa cuando quiere.
+version: 2
+updates:
+  # Frontend (React + Vite)
+  - package-ecosystem: "npm"
+    directory: "/DK-Frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # Agrupa las actualizaciones menores/parche en un solo PR para no inundar.
+      frontend-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Backend (Spring Boot + Gradle)
+  - package-ecosystem: "gradle"
+    directory: "/DK-Backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions (el workflow de auto-deploy)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

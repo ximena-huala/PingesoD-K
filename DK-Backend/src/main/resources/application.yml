@@ -4,6 +4,14 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
+  # Límite explícito de subida (import Bsale/MercadoLibre). Acota el tamaño de los
+  # archivos para evitar agotar memoria con una subida enorme. Igual al
+  # client_max_body_size de nginx (25m) para que no haya desajuste entre capas.
+  servlet:
+    multipart:
+      max-file-size: ${MAX_UPLOAD_SIZE:25MB}
+      max-request-size: ${MAX_UPLOAD_SIZE:25MB}
+
   # Carga .env local (Falabella, BD, JWT). Las variables del sistema tienen prioridad.
   config:
     import: optional:file:.env[.properties]
