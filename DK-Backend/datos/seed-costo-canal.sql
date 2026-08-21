@@ -37,4 +37,16 @@ VALUES
   (gen_random_uuid(), 'a4789506-e1e7-4921-b28f-2c2f25f7c290', 'COMISION_PORCENTAJE', 'Accesorios para limpieza',                                       'Comisión estimada', 11, true, '2025-01-01', NULL, NOW()),
   (gen_random_uuid(), 'a4789506-e1e7-4921-b28f-2c2f25f7c290', 'COMISION_PORCENTAJE', 'Artículos para limpieza',                                        'Comisión estimada', 11, true, '2025-01-01', NULL, NOW());
 
+-- MercadoLibre: comisión estimada de respaldo (se puede ajustar desde la app).
+-- Toma el canal por nombre para evitar hardcodear UUID.
+DELETE FROM costo_canal
+ WHERE canal_id = (SELECT id FROM canal_venta WHERE nombre = 'MercadoLibre')
+   AND tipo_costo = 'COMISION_PORCENTAJE';
+
+INSERT INTO costo_canal (id, canal_id, tipo_costo, categoria, descripcion, valor, es_porcentaje, fecha_inicio, fecha_fin, created_at)
+SELECT gen_random_uuid(), id, 'COMISION_PORCENTAJE', NULL,
+       'Comisión estimada por defecto', 18, true, '2025-01-01', NULL, NOW()
+  FROM canal_venta
+ WHERE nombre = 'MercadoLibre';
+
 COMMIT;
