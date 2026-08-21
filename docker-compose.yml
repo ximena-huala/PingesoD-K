@@ -27,6 +27,10 @@ services:
     build: ./DK-Backend
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      # En Docker el backend debe escuchar en todas las interfaces del contenedor
+      # para que el frontend lo alcance por la red interna (backend:8080). El perfil
+      # prod, por defecto, lo ataria a 127.0.0.1 (util solo en bare-metal).
+      SERVER_ADDRESS: 0.0.0.0
       # El dump trae el esquema hasta V6; Flyway aplica las migraciones nuevas
       # (V7 en adelante) encima, asi el Docker no se queda atras del codigo.
       SPRING_FLYWAY_ENABLED: "true"

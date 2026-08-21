@@ -10,10 +10,12 @@ springdoc:
     enabled: false
 
 server:
-  # El backend solo acepta conexiones locales: nginx (mismo host) hace de proxy
-  # inverso hacia 127.0.0.1:8080. Así 8080 deja de ser alcanzable desde internet
-  # aunque el firewall se configure mal. forward-headers-strategy respeta los
-  # X-Forwarded-* que manda nginx (para que el backend "sepa" que la request vino
-  # por HTTPS).
-  address: 127.0.0.1
+  # Por defecto el backend solo acepta conexiones locales (127.0.0.1): sirve para
+  # el montaje bare-metal (jar + nginx en el mismo host), donde 8080 no queda
+  # alcanzable desde internet aunque el firewall se configure mal.
+  # En Docker el backend vive en su propio contenedor y el frontend lo llama por
+  # la red interna (backend:8080), así que ahí hay que abrirlo con SERVER_ADDRESS=0.0.0.0.
+  # forward-headers-strategy respeta los X-Forwarded-* del proxy (Caddy/nginx),
+  # para que el backend "sepa" que la request vino por HTTPS.
+  address: ${SERVER_ADDRESS:127.0.0.1}
   forward-headers-strategy: framework
