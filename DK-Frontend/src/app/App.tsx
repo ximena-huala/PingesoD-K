@@ -24,7 +24,9 @@ import {
   login, getDetalle, getResumen, getEstadoFalabella, descargarExcel,
   falabellaOrders, falabellaProducts, falabellaCategories, falabellaBrands, falabellaTestFirma,
   getCanales, getCostosCanal, crearCostoCanal, actualizarCostoCanal, eliminarCostoCanal,
+  importarCostosMercadoLibre, getCostosMercadoLibre, getCostoMercadoLibrePorSku, exportarCostosMercadoLibre,
   TIPOS_COSTO, type CanalVenta, type CostoCanal, type TipoCosto,
+  type MercadoLibreCosto, type MercadoLibreImportResult,
 } from "./api";
 import { importarStockBsale, listarProductos, type BsaleImportResult, type Producto } from "@/lib/api";
 
@@ -1122,6 +1124,15 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
   const [commFechaInicio, setCommFechaInicio] = useState("");
   const [commFechaFin, setCommFechaFin] = useState("");
   const [savingCosto, setSavingCosto] = useState(false);
+  const [mlFile, setMlFile] = useState<File | null>(null);
+  const [mlImporting, setMlImporting] = useState(false);
+  const [mlImportResult, setMlImportResult] = useState<MercadoLibreImportResult | null>(null);
+  const [mlError, setMlError] = useState("");
+  const [mlCostos, setMlCostos] = useState<MercadoLibreCosto[]>([]);
+  const [mlLoading, setMlLoading] = useState(false);
+  const [mlSku, setMlSku] = useState("");
+  const [mlSearch, setMlSearch] = useState("");
+  const [mlExporting, setMlExporting] = useState(false);
 
   useEffect(() => {
     getCanales()
@@ -1209,6 +1220,70 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
       setToast(err instanceof Error ? err.message : "No se pudo eliminar el costo");
     }
   }
+
+  async function cargarCostosMercadoLibre() {
+    setMlLoading(true);
+    setMlError("");
+    try {
+      setMlCostos(await getCostosMercadoLibre());
+    } catch (err) {
+      setMlError(err instanceof Error ? err.message : "No se pudieron cargar los costos de MercadoLibre");
+    } finally {
+      setMlLoading(false);
+    }
+  }
+
+  async function handleImportarMercadoLibre() {
+    if (!mlFile) { setMlError("Selecciona un archivo CSV primero"); return; }
+    setMlImporting(true);
+    setMlError("");
+    try {
+      setMlImportResult(await importarCostosMercadoLibre(mlFile));
+      await cargarCostosMercadoLibre();
+      setToast("Costos de MercadoLibre importados");
+    } catch (err) {
+      setMlError(err instanceof Error ? err.message : "No se pudo importar el CSV");
+    } finally {
+      setMlImporting(false);
+    }
+  }
+
+  async function handleBuscarCostoMercadoLibre() {
+    const sku = mlSku.trim();
+    if (!sku) { cargarCostosMercadoLibre(); return; }
+    setMlLoading(true);
+    setMlError("");
+    try {
+      setMlCostos([await getCostoMercadoLibrePorSku(sku)]);
+    } catch (err) {
+      setMlCostos([]);
+      setMlError(err instanceof Error ? err.message : "No se encontró el SKU");
+    } finally {
+      setMlLoading(false);
+    }
+  }
+
+  async function handleExportarMercadoLibre() {
+    setMlExporting(true);
+    setMlError("");
+    try {
+      const blob = await exportarCostosMercadoLibre();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "costos-mercadolibre-export.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setMlError(err instanceof Error ? err.message : "No se pudo exportar el CSV");
+    } finally {
+      setMlExporting(false);
+    }
+  }
+
+  useEffect(() => {
+    cargarCostosMercadoLibre();
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
   const [apiResp, setApiResp] = useState<{ endpoint: string; time: string; ms: number; resumen: string; ok: boolean; body: string } | null>(null);
   const [apiLoading, setApiLoading] = useState("");
@@ -1599,6 +1674,73 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
               </div>
             </SectionCard>
 
+            <SectionCard title="Costos MercadoLibre" annotation="S2 · CSV Integración">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-end gap-3">
+                  <div className="flex-1 flex flex-col gap-1">
+                    <label className="text-xs font-medium text-foreground">Archivo CSV de costos</label>
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(event) => { setMlFile(event.target.files?.[0] ?? null); setMlImportResult(null); setMlError(""); }}
+                      className="h-9 w-full rounded border border-border bg-input-background px-2 py-1.5 text-xs text-foreground file:mr-3 file:border-0 file:bg-transparent file:text-xs file:font-medium"
+                    />
+                  </div>
+                  <PrimaryButton label={mlImporting ? "Importando…" : "Importar CSV"} onClick={handleImportarMercadoLibre} disabled={mlImporting || !mlFile} />
+                </div>
+                <p className="text-[10px] font-mono text-muted-foreground">Encabezados: SKU,CostoProm,UltimoCosto,CostoMercadoLibre</p>
+
+                {mlError && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{mlError}</div>}
+                {mlImportResult && (
+                  <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                    Creados: {mlImportResult.creados} · Actualizados: {mlImportResult.actualizados} · Omitidos: {mlImportResult.omitidos} · Errores: {mlImportResult.errores} · Procesados: {mlImportResult.totalProcesados}
+                    {mlImportResult.detalleErrores.length > 0 && (
+                      <div className="mt-2 max-h-24 overflow-auto border-t border-emerald-200 pt-2">
+                        {mlImportResult.detalleErrores.map((error, index) => <p key={index}>{error}</p>)}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-end gap-3 border-t border-border pt-4">
+                  <div className="flex-1 flex flex-col gap-1">
+                    <label className="text-xs font-medium text-foreground">Buscar costo por SKU</label>
+                    <input value={mlSku} onChange={(event) => setMlSku(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") handleBuscarCostoMercadoLibre(); }} placeholder="Ej: SKU-001" className="h-9 rounded border border-border bg-input-background px-3 text-xs outline-none focus:border-foreground/40" />
+                  </div>
+                  <PrimaryButton label="Buscar" onClick={handleBuscarCostoMercadoLibre} disabled={mlLoading} />
+                  <SecondaryButton label="Actualizar" icon={mlLoading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} onClick={cargarCostosMercadoLibre} />
+                  <SecondaryButton label={mlExporting ? "Exportando…" : "Descargar CSV"} icon={<Download size={13} />} onClick={handleExportarMercadoLibre} />
+                </div>
+
+                <div className="border border-border rounded overflow-hidden">
+                  <div className="bg-muted px-3 py-2 border-b border-border flex items-center justify-between">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Costos importados ({mlCostos.length})</p>
+                    <input value={mlSearch} onChange={(event) => setMlSearch(event.target.value)} placeholder="Filtrar tabla…" className="h-7 w-40 rounded border border-border bg-white px-2 text-[11px] outline-none" />
+                  </div>
+                  {mlLoading ? <div className="p-6 text-center text-xs text-muted-foreground"><Loader2 size={16} className="mx-auto animate-spin" /></div> : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-[11px]">
+                        <thead className="bg-muted/50"><tr>{["SKU", "Costo prom.", "Último costo", "Costo MercadoLibre", "Fuente", "Actualizado"].map((header) => <th key={header} className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-muted-foreground">{header}</th>)}</tr></thead>
+                        <tbody>
+                          {mlCostos.filter((c) => c.sku.toLowerCase().includes(mlSearch.toLowerCase())).map((c, index) => (
+                            <tr key={c.id} className={index % 2 === 0 ? "bg-background" : "bg-muted/10"}>
+                              <td className="px-3 py-2 font-mono text-foreground">{c.sku}</td>
+                              <td className="px-3 py-2 font-mono">{c.costoProm == null ? "—" : fmtCl(c.costoProm)}</td>
+                              <td className="px-3 py-2 font-mono">{c.ultimoCosto == null ? "—" : fmtCl(c.ultimoCosto)}</td>
+                              <td className="px-3 py-2 font-mono font-medium">{fmtCl(c.costoMercadoLibre)}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{c.fuenteArchivo}</td>
+                              <td className="px-3 py-2 font-mono text-muted-foreground">{c.updatedAt}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {!mlLoading && mlCostos.filter((c) => c.sku.toLowerCase().includes(mlSearch.toLowerCase())).length === 0 && <p className="px-4 py-5 text-center text-xs text-muted-foreground">No hay costos para mostrar.</p>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </SectionCard>
+
             {/* Section 2: API Integration */}
             <SectionCard title="Integración con Marketplace (API)" annotation="S2 · Conexión Automática">
               <div className="grid grid-cols-2 gap-5">
@@ -1830,6 +1972,12 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
 
 export default function App() {
   const [screen, setScreen] = useState(0);
+  useEffect(() => {
+    const handleLogout = () => setScreen(0);
+    window.addEventListener("dk:logout", handleLogout);
+    return () => window.removeEventListener("dk:logout", handleLogout);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background" style={{ fontFamily: "Inter, sans-serif" }}>
       {screen === 0 && <WF1Login onLogin={() => setScreen(1)} />}

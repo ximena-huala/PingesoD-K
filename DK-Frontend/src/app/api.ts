@@ -7,6 +7,8 @@
 //   3. En dev (npm run dev), apunta a localhost:8080 (el backend local).
 const BASE =
   (import.meta as any).env?.VITE_API_URL ??
+  (import.meta as any).env?.VITE_API_BASE_URL ??
+  (import.meta as any).env?.FRONTEND_API_BASE_URL ??
   ((import.meta as any).env?.PROD ? "" : "http://localhost:8080");
 
 let token: string | null = localStorage.getItem("dk_token");
@@ -18,6 +20,7 @@ export function isAuthed(): boolean {
 export function logout(): void {
   token = null;
   localStorage.removeItem("dk_token");
+  window.dispatchEvent(new Event("dk:logout"));
 }
 
 function authHeaders(): Record<string, string> {
@@ -246,4 +249,60 @@ export function actualizarCostoCanal(canalId: string, costoId: string, costo: Co
 
 export function eliminarCostoCanal(canalId: string, costoId: string): Promise<void> {
   return sendJson<void>(`/api/canales/${canalId}/costos/${costoId}`, "DELETE");
+}
+
+// ─── Integración MercadoLibre ───────────────────────────────────────────────
+
+export type MercadoLibreImportResult = {
+  creados: number;
+  actualizados: number;
+  omitidos: number;
+  errores: number;
+  totalProcesados: number;
+  importadoEn: string;
+  detalleErrores: string[];
+};
+
+export type MercadoLibreCosto = {
+  id: string;
+  sku: string;
+  costoProm: number | null;
+  ultimoCosto: number | null;
+  costoMercadoLibre: number;
+  fuenteArchivo: string;
+  updatedAt: string;
+};
+
+export async function importarCostosMercadoLibre(file: File): Promise<MercadoLibreImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/api/integraciones/mercadolibre/import`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: form,
+  });
+  if (res.status === 401) {
+    logout();
+    throw new Error("Sesión expirada, vuelve a iniciar sesión");
+  }
+  if (!res.ok) throw new Error(await parseErrorBody(res, "/api/integraciones/mercadolibre/import"));
+  return res.json() as Promise<MercadoLibreImportResult>;
+}
+
+export function getCostosMercadoLibre(): Promise<MercadoLibreCosto[]> {
+  return getJson<MercadoLibreCosto[]>("/api/integraciones/mercadolibre");
+}
+
+export function getCostoMercadoLibrePorSku(sku: string): Promise<MercadoLibreCosto> {
+  return getJson<MercadoLibreCosto>(`/api/integraciones/mercadolibre/${encodeURIComponent(sku)}`);
+}
+
+export async function exportarCostosMercadoLibre(): Promise<Blob> {
+  const res = await fetch(`${BASE}/api/integraciones/mercadolibre/export`, { headers: authHeaders() });
+  if (res.status === 401) {
+    logout();
+    throw new Error("Sesión expirada, vuelve a iniciar sesión");
+  }
+  if (!res.ok) throw new Error(await parseErrorBody(res, "/api/integraciones/mercadolibre/export"));
+  return res.blob();
 }
