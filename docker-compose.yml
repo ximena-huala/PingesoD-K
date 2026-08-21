@@ -38,7 +38,9 @@ services:
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: ${DB_PASSWORD:-postgres}
       JWT_SECRET: ${JWT_SECRET:-clave-de-desarrollo-para-docker-cambiar-en-produccion-0123456789ABCDEF}
-      CORS_ALLOWED_ORIGINS: http://localhost:8081
+      # Orígenes permitidos para el navegador. En la VM se define en el .env con el
+      # dominio real (ej: https://34-176-94-33.sslip.io); localhost:8081 es el default local.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081}
       # Falabella es opcional: sin credenciales la app arranca igual (el dashboard
       # funciona con los datos del dump; el Explorador en vivo necesita estas claves).
       FALABELLA_USER_ID: ${FALABELLA_USER_ID:-}
