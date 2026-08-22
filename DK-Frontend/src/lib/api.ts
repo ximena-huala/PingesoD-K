@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_API_URL ?? import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 export type Producto = {
   id: string;
@@ -51,11 +51,12 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
-export async function importarStockBsale(file: File): Promise<BsaleImportResult> {
+export async function importarStockBsale(file: File, productosFile?: File): Promise<BsaleImportResult> {
   const form = new FormData();
-  form.append("file", file);
+  form.append("stock", file);
+  if (productosFile) form.append("productos", productosFile);
   try {
-    const res = await fetch(apiUrl("/api/bsale/import/stock"), {
+    const res = await fetch(apiUrl("/api/integraciones/bsale/import"), {
       method: "POST",
       headers: authHeaders(), // sin Content-Type: el navegador pone el boundary del multipart
       body: form,
@@ -69,11 +70,12 @@ export async function importarStockBsale(file: File): Promise<BsaleImportResult>
 
 export async function listarProductos(limit = 200): Promise<Producto[]> {
   try {
-    const res = await fetch(apiUrl(`/api/bsale/productos?limit=${limit}`), {
+    const res = await fetch(apiUrl("/api/productos"), {
       headers: authHeaders(),
     });
     if (!res.ok) throw new Error(await parseError(res));
-    return res.json();
+    const productos = await res.json() as Producto[];
+    return productos.slice(0, limit);
   } catch (err) {
     throw fetchError(err);
   }

@@ -289,6 +289,19 @@ export async function importarCostosMercadoLibre(file: File): Promise<MercadoLib
   return res.json() as Promise<MercadoLibreImportResult>;
 }
 
+export async function importarVentasMercadoLibre(file: File): Promise<MercadoLibreImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const path = "/api/integraciones/mercadolibre/ventas/import";
+  const res = await fetch(`${BASE}${path}`, { method: "POST", headers: authHeaders(), body: form });
+  if (res.status === 401) {
+    logout();
+    throw new Error("Sesión expirada, vuelve a iniciar sesión");
+  }
+  if (!res.ok) throw new Error(await parseErrorBody(res, path));
+  return res.json() as Promise<MercadoLibreImportResult>;
+}
+
 export function getCostosMercadoLibre(): Promise<MercadoLibreCosto[]> {
   return getJson<MercadoLibreCosto[]>("/api/integraciones/mercadolibre");
 }

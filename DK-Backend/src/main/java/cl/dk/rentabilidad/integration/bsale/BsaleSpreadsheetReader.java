@@ -197,12 +197,12 @@ public class BsaleSpreadsheetReader {
     private Map<String, List<String>> aliasPorColumna(TipoExportacion tipo) {
         Map<String, List<String>> mapa = new LinkedHashMap<>();
         if (tipo == TipoExportacion.PRODUCTOS) {
-            mapa.put("sku", List.of("sku", "codigo", "código", "codigo de barras", "barcode"));
-            mapa.put("nombre", List.of("producto", "nombre", "descripcion", "descripción"));
+            mapa.put("sku", List.of("sku", "sellersku", "codigo", "código", "codigo de barras", "barcode"));
+            mapa.put("nombre", List.of("producto", "nombre", "name", "descripcion", "descripción"));
             mapa.put("estado", List.of("estado"));
-            mapa.put("marca", List.of("marca"));
+            mapa.put("marca", List.of("marca", "brand"));
             mapa.put("tipo", List.of("tipo de producto", "tipo producto", "tipo"));
-            mapa.put("categoria", List.of("categoria", "categoría", "familia"));
+            mapa.put("categoria", List.of("categoria", "categoría", "primarycategory", "familia"));
         } else {
             mapa.put("sku", List.of("sku"));
             mapa.put("nombre", List.of("producto", "nombre", "descripcion", "descripción"));

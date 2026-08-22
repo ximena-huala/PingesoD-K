@@ -159,7 +159,7 @@ public class BsaleManualImportService {
         boolean existia = productoService.existePorSku(sku);
         boolean esNuevo = productoService.importarDesdeBsale(
                 sku,
-                nombre.isBlank() ? sku : nombre,
+            nombre.isBlank() ? null : nombre,
                 fila.get("marca"),
                 fila.get("tipo"),
                 null,

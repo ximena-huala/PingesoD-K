@@ -24,7 +24,7 @@ import {
   login, getDetalle, getResumen, getEstadoFalabella, descargarExcel,
   falabellaOrders, falabellaProducts, falabellaCategories, falabellaBrands, falabellaTestFirma,
   getCanales, getCostosCanal, crearCostoCanal, actualizarCostoCanal, eliminarCostoCanal,
-  importarCostosMercadoLibre, getCostosMercadoLibre, getCostoMercadoLibrePorSku, exportarCostosMercadoLibre,
+  importarCostosMercadoLibre, importarVentasMercadoLibre, getCostosMercadoLibre, getCostoMercadoLibrePorSku, exportarCostosMercadoLibre,
   TIPOS_COSTO, type CanalVenta, type CostoCanal, type TipoCosto,
   type MercadoLibreCosto, type MercadoLibreImportResult,
 } from "./api";
@@ -52,6 +52,14 @@ type SaleRow = {
 // mapeados al tipo SaleRow en WF2Reportes. Antes había un ALL_ROWS mock aquí.
 
 const MARKETPLACES = ["Todos", "Falabella", "MercadoLibre", "Walmart", "Shopify", "Tienda física"];
+
+function normalizarMarketplace(nombre: string): string {
+  const clave = nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[\s_-]+/g, "");
+  if (clave === "mercadolibre" || clave === "mercadolivre") return "MercadoLibre";
+  if (clave === "falabella") return "Falabella";
+  if (clave === "tiendafisica") return "Tienda física";
+  return nombre;
+}
 
 const fmt = (n: number) =>
   "$" + n.toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -421,7 +429,7 @@ function WF2Reportes({ goTo }: { goTo: (n: number) => void }) {
         setRows(
           detalle.map((d) => ({
             date: d.fecha,
-            marketplace: d.canal,
+            marketplace: normalizarMarketplace(d.canal),
             sku: d.sku,
             product: d.producto,
             category: d.categoria,
@@ -439,7 +447,12 @@ function WF2Reportes({ goTo }: { goTo: (n: number) => void }) {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { cargarDatos(); }, []);
+  useEffect(() => {
+    cargarDatos();
+    const refresh = () => cargarDatos();
+    window.addEventListener("dk:reportes-refresh", refresh);
+    return () => window.removeEventListener("dk:reportes-refresh", refresh);
+  }, []);
   // Al cambiar filtros, volver a la primera página
   useEffect(() => { setPage(0); }, [search, mpFilter, catFilter, dateFrom, dateTo, vista]);
 
@@ -483,6 +496,11 @@ const filtered = rows.filter((r) => {
   return mpOk && catOk && searchOk && dateOk;
 });
 
+const marketplacesDisponibles = [
+  "Todos",
+  ...MARKETPLACES.filter((marketplace) => marketplace !== "Todos"),
+  ...Array.from(new Set(rows.map((r) => r.marketplace).filter(Boolean))).sort(),
+].filter((marketplace, index, list) => list.indexOf(marketplace) === index);
 const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).filter(Boolean))).sort()];
 
   const sorted = sortCol
@@ -531,8 +549,22 @@ const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).f
   const catColToKey: Record<string, string> = {
     "Categoría": "etiqueta", "Unidades": "unidades", "Ingreso": "ingreso", "Margen": "margen", "Margen %": "margenPorcentaje",
   };
-  const catsSorted: any[] = resumen?.porCategoria
-    ? [...resumen.porCategoria].sort((a: any, b: any) => {
+  const categoriasFiltradas = Array.from(
+    productRows.reduce((map, row) => {
+      const current = map.get(row.category) ?? { etiqueta: row.category, unidades: 0, ingreso: 0, margen: 0 };
+      current.unidades += row.unidades;
+      current.ingreso += row.ventas;
+      current.margen += row.ganancia;
+      map.set(row.category, current);
+      return map;
+    }, new Map<string, { etiqueta: string; unidades: number; ingreso: number; margen: number }>()).values()
+  ).map((grupo) => ({
+    ...grupo,
+    margenPorcentaje: grupo.ingreso ? (grupo.margen / grupo.ingreso) * 100 : 0,
+  }));
+
+  const catsSorted: any[] = categoriasFiltradas.length > 0
+    ? [...categoriasFiltradas].sort((a: any, b: any) => {
         const av = a[catSortCol]; const bv = b[catSortCol];
         const res = typeof av === "number" ? av - bv : String(av ?? "").localeCompare(String(bv ?? ""));
         return catSortAsc ? res : -res;
@@ -684,7 +716,7 @@ const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).f
               </button>
               {mpDropOpen && (
                 <div className="absolute top-full left-0 mt-1 bg-white border border-border rounded-lg shadow-lg z-30 py-1 min-w-[170px]">
-                  {MARKETPLACES.map((mp) => (
+                  {marketplacesDisponibles.map((mp) => (
                     <button key={mp} onClick={() => { setMpFilter(mp); setMpDropOpen(false); }}
                       className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors ${mp === mpFilter ? "bg-muted font-semibold text-foreground" : "text-muted-foreground"}`}>
                       {mp === "Todos" ? "Todos los Marketplaces" : mp}
@@ -838,11 +870,11 @@ const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).f
             </div>
 
             {/* Rentabilidad por categoría — pestaña "Por Categoría" del Excel, vía /resumen */}
-            {resumen?.porCategoria?.length > 0 && (
+            {categoriasFiltradas.length > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <AnnotationLabel>Rentabilidad por Categoría</AnnotationLabel>
-                  <span className="text-[10px] font-mono text-muted-foreground">— {resumen.porCategoria.length} categorías · margen ponderado</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">— {categoriasFiltradas.length} categorías · margen ponderado</span>
                 </div>
                 <div className="bg-white border border-border rounded-lg overflow-hidden">
                   <div className="max-h-56 overflow-auto">
@@ -1091,6 +1123,7 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
   const [toast, setToast] = useState("");
   const [fileName, setFileName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [productosFile, setProductosFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
   const [uploadedRows, setUploadedRows] = useState<string[][]>([]);
   const [loadingProductos, setLoadingProductos] = useState(false);
@@ -1132,7 +1165,11 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
   const [mlLoading, setMlLoading] = useState(false);
   const [mlSku, setMlSku] = useState("");
   const [mlSearch, setMlSearch] = useState("");
+  const [mlPage, setMlPage] = useState(0);
   const [mlExporting, setMlExporting] = useState(false);
+  const [mlVentasFile, setMlVentasFile] = useState<File | null>(null);
+  const [mlVentasImporting, setMlVentasImporting] = useState(false);
+  const [mlVentasResult, setMlVentasResult] = useState<MercadoLibreImportResult | null>(null);
 
   useEffect(() => {
     getCanales()
@@ -1281,9 +1318,28 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
     }
   }
 
+  async function handleImportarVentasMercadoLibre() {
+    if (!mlVentasFile) { setMlError("Selecciona un CSV de ventas primero"); return; }
+    setMlVentasImporting(true);
+    setMlError("");
+    try {
+      setMlVentasResult(await importarVentasMercadoLibre(mlVentasFile));
+      setToast("Ventas de MercadoLibre importadas");
+      window.dispatchEvent(new Event("dk:reportes-refresh"));
+    } catch (err) {
+      setMlError(err instanceof Error ? err.message : "No se pudo importar el CSV de ventas");
+    } finally {
+      setMlVentasImporting(false);
+    }
+  }
+
   useEffect(() => {
     cargarCostosMercadoLibre();
   }, []);
+
+  useEffect(() => {
+    setMlPage(0);
+  }, [mlSearch]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [apiResp, setApiResp] = useState<{ endpoint: string; time: string; ms: number; resumen: string; ok: boolean; body: string } | null>(null);
   const [apiLoading, setApiLoading] = useState("");
@@ -1430,7 +1486,7 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
     setUploading(true);
     setFileError("");
     try {
-      const result = await importarStockBsale(selectedFile);
+      const result = await importarStockBsale(selectedFile, productosFile ?? undefined);
       setImportResult(result);
       await cargarProductos();
       const msg = `Importación OK: ${result.productosCreados} creados, ${result.productosActualizados} actualizados`;
@@ -1457,6 +1513,11 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
     catalogoCurrentPage * catalogoPageSize,
     catalogoCurrentPage * catalogoPageSize + catalogoPageSize
   );
+  const mlPageSize = 50;
+  const mlCostosFiltrados = mlCostos.filter((c) => c.sku.toLowerCase().includes(mlSearch.toLowerCase()));
+  const mlTotalPages = Math.max(1, Math.ceil(mlCostosFiltrados.length / mlPageSize));
+  const mlCurrentPage = Math.min(mlPage, mlTotalPages - 1);
+  const mlCostosPagina = mlCostosFiltrados.slice(mlCurrentPage * mlPageSize, mlCurrentPage * mlPageSize + mlPageSize);
 
   return (
     <div className="min-h-screen bg-background flex flex-col" style={{ fontFamily: "Inter, sans-serif" }}>
@@ -1534,8 +1595,8 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                     onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
                   <Upload size={28} className="text-muted-foreground/50" />
                   <div className="text-center">
-                    <p className="text-sm font-medium text-foreground">Arrastra y suelta tu archivo aquí</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">Export Bsale «Stock actual» — .XLSX o .CSV, máx. 25 MB</p>
+                    <p className="text-sm font-medium text-foreground">Selecciona los archivos exportados desde Bsale</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Usa un archivo de Productos y servicios y otro de Stock actual</p>
                   </div>
                   <span className="text-[10px] font-mono text-muted-foreground">o haz clic para seleccionar</span>
                 </div>
@@ -1549,6 +1610,18 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                     disabled={uploading || !selectedFile}
                   />
                   <SecondaryButton label="Actualizar catálogo" onClick={cargarProductos} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
+                    Productos y servicios
+                    <input type="file" accept=".csv,.xlsx" onChange={(e) => setProductosFile(e.target.files?.[0] ?? null)} className="h-9 rounded border border-border bg-input-background px-2 py-1.5 text-xs file:mr-2 file:border-0 file:bg-transparent file:text-xs" />
+                    <span className="text-[10px] font-mono font-normal text-muted-foreground">SKU, Producto, Marca, Categoría, Estado</span>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
+                    Stock actual
+                    <input type="file" accept=".csv,.xlsx" onChange={(e) => { const file = e.target.files?.[0] ?? null; setSelectedFile(file); setFileName(file?.name ?? ""); }} className="h-9 rounded border border-border bg-input-background px-2 py-1.5 text-xs file:mr-2 file:border-0 file:bg-transparent file:text-xs" />
+                    <span className="text-[10px] font-mono font-normal text-muted-foreground">SKU, Stock, Costo promedio</span>
+                  </label>
                 </div>
                 {fileError ? (
                   <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1676,6 +1749,15 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
 
             <SectionCard title="Costos MercadoLibre" annotation="S2 · CSV Integración">
               <div className="flex flex-col gap-4">
+                <div className="rounded border border-border bg-muted/30 p-3">
+                  <p className="text-xs font-semibold text-foreground">Importar ventas para Reportes</p>
+                  <p className="mt-1 text-[10px] font-mono text-muted-foreground">Requeridas: orderId, fecha, sku, cantidad, precioVenta. Opcionales: comision, envio.</p>
+                  <div className="mt-3 flex items-end gap-3">
+                    <input type="file" accept=".csv,text/csv" onChange={(event) => { setMlVentasFile(event.target.files?.[0] ?? null); setMlVentasResult(null); }} className="h-9 flex-1 rounded border border-border bg-input-background px-2 py-1.5 text-xs file:mr-3 file:border-0 file:bg-transparent file:text-xs file:font-medium" />
+                    <PrimaryButton label={mlVentasImporting ? "Importando…" : "Importar ventas"} onClick={handleImportarVentasMercadoLibre} disabled={mlVentasImporting || !mlVentasFile} />
+                  </div>
+                  {mlVentasResult && <p className="mt-2 text-xs text-emerald-700">Creados: {mlVentasResult.creados} · Actualizados: {mlVentasResult.actualizados} · Omitidos: {mlVentasResult.omitidos} · Errores: {mlVentasResult.errores}</p>}
+                </div>
                 <div className="flex items-end gap-3">
                   <div className="flex-1 flex flex-col gap-1">
                     <label className="text-xs font-medium text-foreground">Archivo CSV de costos</label>
@@ -1722,7 +1804,7 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                       <table className="min-w-full text-[11px]">
                         <thead className="bg-muted/50"><tr>{["SKU", "Costo prom.", "Último costo", "Costo MercadoLibre", "Fuente", "Actualizado"].map((header) => <th key={header} className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-muted-foreground">{header}</th>)}</tr></thead>
                         <tbody>
-                          {mlCostos.filter((c) => c.sku.toLowerCase().includes(mlSearch.toLowerCase())).map((c, index) => (
+                          {mlCostosPagina.map((c, index) => (
                             <tr key={c.id} className={index % 2 === 0 ? "bg-background" : "bg-muted/10"}>
                               <td className="px-3 py-2 font-mono text-foreground">{c.sku}</td>
                               <td className="px-3 py-2 font-mono">{c.costoProm == null ? "—" : fmtCl(c.costoProm)}</td>
@@ -1734,7 +1816,14 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                           ))}
                         </tbody>
                       </table>
-                      {!mlLoading && mlCostos.filter((c) => c.sku.toLowerCase().includes(mlSearch.toLowerCase())).length === 0 && <p className="px-4 py-5 text-center text-xs text-muted-foreground">No hay costos para mostrar.</p>}
+                      {!mlLoading && mlCostosFiltrados.length === 0 && <p className="px-4 py-5 text-center text-xs text-muted-foreground">No hay costos para mostrar.</p>}
+                      {mlCostosFiltrados.length > 0 && <div className="flex items-center justify-between border-t border-border bg-muted/50 px-3 py-2">
+                        <span className="text-[10px] font-mono text-muted-foreground">{mlCostosFiltrados.length} registros · página {mlCurrentPage + 1} de {mlTotalPages}</span>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setMlPage((page) => Math.max(0, page - 1))} disabled={mlCurrentPage === 0} className="h-6 px-2 text-[10px] border border-border rounded bg-white disabled:opacity-40">Anterior</button>
+                          <button onClick={() => setMlPage((page) => Math.min(mlTotalPages - 1, page + 1))} disabled={mlCurrentPage >= mlTotalPages - 1} className="h-6 px-2 text-[10px] border border-border rounded bg-white disabled:opacity-40">Siguiente</button>
+                        </div>
+                      </div>}
                     </div>
                   )}
                 </div>
