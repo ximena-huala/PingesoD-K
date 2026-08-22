@@ -2,11 +2,17 @@ package cl.dk.rentabilidad.service;
 
 import cl.dk.rentabilidad.dto.MercadoLibreCostoDto;
 import cl.dk.rentabilidad.dto.MercadoLibreImportResultDto;
+import cl.dk.rentabilidad.entity.CanalVenta;
+import cl.dk.rentabilidad.entity.CostoVenta;
 import cl.dk.rentabilidad.entity.MercadoLibreCosto;
 import cl.dk.rentabilidad.entity.Producto;
+import cl.dk.rentabilidad.entity.Venta;
 import cl.dk.rentabilidad.exception.ResourceNotFoundException;
+import cl.dk.rentabilidad.repository.CanalVentaRepository;
+import cl.dk.rentabilidad.repository.CostoVentaRepository;
 import cl.dk.rentabilidad.repository.MercadoLibreCostoRepository;
 import cl.dk.rentabilidad.repository.ProductoRepository;
+import cl.dk.rentabilidad.repository.VentaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,7 +24,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,8 +40,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MercadoLibreService {
 
+    private static final String CANAL_MERCADO_LIBRE = "MercadoLibre";
+
     private final MercadoLibreCostoRepository mercadoLibreCostoRepository;
     private final ProductoRepository productoRepository;
+    private final CanalVentaRepository canalVentaRepository;
+    private final VentaRepository ventaRepository;
+    private final CostoVentaRepository costoVentaRepository;
+    private final RentabilidadService rentabilidadService;
 
     @Transactional
     public MercadoLibreImportResultDto importarDesdeCsv(MultipartFile archivo) {
@@ -81,6 +96,69 @@ public class MercadoLibreService {
             }
         } catch (Exception e) {
             throw new IllegalArgumentException("No se pudo leer el CSV de MercadoLibre: " + e.getMessage(), e);
+        }
+
+        return MercadoLibreImportResultDto.builder()
+                .creados(creados)
+                .actualizados(actualizados)
+                .omitidos(omitidos)
+                .errores(errores)
+                .totalProcesados(creados + actualizados + omitidos)
+                .importadoEn(LocalDateTime.now())
+                .detalleErrores(detalleErrores.stream().limit(50).toList())
+                .build();
+    }
+
+    @Transactional
+    public MercadoLibreImportResultDto importarVentasDesdeCsv(MultipartFile archivo) {
+        if (archivo == null || archivo.isEmpty()) {
+            throw new IllegalArgumentException("El archivo CSV de ventas de MercadoLibre está vacío");
+        }
+
+        CanalVenta canal = canalVentaRepository.findByNombre(CANAL_MERCADO_LIBRE)
+                .orElseThrow(() -> new IllegalStateException("No existe el canal 'MercadoLibre' en la base"));
+
+        int creados = 0;
+        int actualizados = 0;
+        int omitidos = 0;
+        int errores = 0;
+        List<String> detalleErrores = new ArrayList<>();
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(archivo.getInputStream(), StandardCharsets.UTF_8))) {
+
+            String headerLine = reader.readLine();
+            if (headerLine == null || headerLine.isBlank()) {
+                throw new IllegalArgumentException("El CSV de ventas no tiene encabezados");
+            }
+
+            char separador = detectarSeparador(headerLine);
+            List<String> headers = parsearLinea(headerLine, separador);
+            Map<String, Integer> columnas = mapearColumnasVentas(headers);
+
+            String linea;
+            int fila = 1;
+            while ((linea = reader.readLine()) != null) {
+                fila++;
+                if (linea.isBlank()) {
+                    continue;
+                }
+
+                try {
+                    List<String> valores = parsearLinea(linea, separador);
+                    ResultadoFila resultado = procesarFilaVenta(valores, columnas, canal);
+                    switch (resultado) {
+                        case CREADO -> creados++;
+                        case ACTUALIZADO -> actualizados++;
+                        case OMITIDO -> omitidos++;
+                    }
+                } catch (Exception e) {
+                    errores++;
+                    detalleErrores.add("Fila " + fila + ": " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            throw new IllegalArgumentException("No se pudo leer el CSV de ventas de MercadoLibre: " + e.getMessage(), e);
         }
 
         return MercadoLibreImportResultDto.builder()
@@ -160,6 +238,70 @@ public class MercadoLibreService {
         return existenteOpt.isPresent() ? ResultadoFila.ACTUALIZADO : ResultadoFila.CREADO;
     }
 
+    private ResultadoFila procesarFilaVenta(List<String> valores, Map<String, Integer> columnas, CanalVenta canal) {
+        String orderId = valor(valores, columnas, "orderid").trim();
+        String sku = valor(valores, columnas, "sku").trim();
+        if (orderId.isBlank() || sku.isBlank()) {
+            return ResultadoFila.OMITIDO;
+        }
+
+        Producto producto = productoRepository.findBySku(sku)
+                .orElseThrow(() -> new IllegalArgumentException("SKU no existe en catálogo: " + sku));
+
+        BigDecimal precioVenta = parsearNumero(valor(valores, columnas, "precioventa"));
+        if (precioVenta == null) {
+            throw new IllegalArgumentException("Falta precioVenta para orderId " + orderId);
+        }
+
+        Integer cantidad = parsearEntero(valor(valores, columnas, "cantidad"));
+        if (cantidad == null || cantidad <= 0) {
+            throw new IllegalArgumentException("Cantidad inválida para orderId " + orderId);
+        }
+
+        LocalDate fechaVenta = parsearFecha(valor(valores, columnas, "fecha"));
+        if (fechaVenta == null) {
+            throw new IllegalArgumentException("Fecha inválida para orderId " + orderId);
+        }
+
+        BigDecimal comision = parsearNumero(valor(valores, columnas, "comision"));
+        BigDecimal envio = parsearNumero(valor(valores, columnas, "envio"));
+
+        Venta ventaExistente = ventaRepository.findByReferenciaExterna(orderId).orElse(null);
+        Venta venta = ventaExistente != null ? ventaExistente : new Venta();
+
+        venta.setCanal(canal);
+        venta.setProducto(producto);
+        venta.setFechaVenta(fechaVenta);
+        venta.setPrecioVenta(precioVenta.setScale(2, RoundingMode.HALF_UP));
+        venta.setCantidad(cantidad);
+        venta.setDescuentoCampana(BigDecimal.ZERO);
+        venta.setReferenciaExterna(orderId);
+        venta.setNumeroOrden(orderId);
+
+        Venta guardada = ventaRepository.save(venta);
+
+        costoVentaRepository.deleteAll(costoVentaRepository.findByVentaId(guardada.getId()));
+        if (comision != null && comision.signum() > 0) {
+            costoVentaRepository.save(CostoVenta.builder()
+                    .venta(guardada)
+                    .tipo("COMISION")
+                    .monto(comision.setScale(2, RoundingMode.HALF_UP))
+                    .fuente("MERCADOLIBRE_IMPORT")
+                    .build());
+        }
+        if (envio != null && envio.signum() > 0) {
+            costoVentaRepository.save(CostoVenta.builder()
+                    .venta(guardada)
+                    .tipo("LOGISTICO")
+                    .monto(envio.setScale(2, RoundingMode.HALF_UP))
+                    .fuente("MERCADOLIBRE_IMPORT")
+                    .build());
+        }
+
+        rentabilidadService.calcular(guardada);
+        return ventaExistente != null ? ResultadoFila.ACTUALIZADO : ResultadoFila.CREADO;
+    }
+
     private void actualizarCostoBaseProducto(String sku, BigDecimal costoMercadoLibre) {
         if (costoMercadoLibre == null || costoMercadoLibre.signum() <= 0) {
             return;
@@ -219,6 +361,58 @@ public class MercadoLibreService {
         return columnas;
     }
 
+    private Map<String, Integer> mapearColumnasVentas(List<String> headers) {
+        Map<String, Integer> columnas = new LinkedHashMap<>();
+        for (int i = 0; i < headers.size(); i++) {
+            String normalizada = normalizar(headers.get(i));
+            if (normalizada.equals("orderid") || normalizada.equals("order_id") || normalizada.equals("idorden") || normalizada.equals("numeroorden") || normalizada.equals("numero_orden")) {
+                columnas.putIfAbsent("orderid", i);
+            }
+            if (normalizada.equals("fecha") || normalizada.equals("fecha_venta") || normalizada.equals("date")) {
+                columnas.putIfAbsent("fecha", i);
+            }
+            if (normalizada.equals("sku") || normalizada.equals("seller_sku") || normalizada.equals("skuseller") || normalizada.equals("sku_producto")) {
+                columnas.putIfAbsent("sku", i);
+            }
+            if (normalizada.equals("cantidad") || normalizada.equals("qty") || normalizada.equals("quantity")) {
+                columnas.putIfAbsent("cantidad", i);
+            }
+            if (normalizada.equals("precioventa") || normalizada.equals("precio_venta") || normalizada.equals("precio") || normalizada.equals("price")) {
+                columnas.putIfAbsent("precioventa", i);
+            }
+            if (normalizada.equals("comision") || normalizada.equals("comisión") || normalizada.equals("commission")) {
+                columnas.putIfAbsent("comision", i);
+            }
+            if (normalizada.equals("envio") || normalizada.equals("shipping") || normalizada.equals("logistica") || normalizada.equals("shipping_cost")) {
+                columnas.putIfAbsent("envio", i);
+            }
+            if (normalizada.equals("categoria") || normalizada.equals("category")) {
+                columnas.putIfAbsent("categoria", i);
+            }
+            if (normalizada.equals("producto") || normalizada.equals("product") || normalizada.equals("nombreproducto") || normalizada.equals("nombre_producto")) {
+                columnas.putIfAbsent("producto", i);
+            }
+        }
+
+        if (!columnas.containsKey("orderid")) {
+            throw new IllegalArgumentException("No se encontró la columna orderId");
+        }
+        if (!columnas.containsKey("fecha")) {
+            throw new IllegalArgumentException("No se encontró la columna fecha");
+        }
+        if (!columnas.containsKey("sku")) {
+            throw new IllegalArgumentException("No se encontró la columna SKU");
+        }
+        if (!columnas.containsKey("cantidad")) {
+            throw new IllegalArgumentException("No se encontró la columna cantidad");
+        }
+        if (!columnas.containsKey("precioventa")) {
+            throw new IllegalArgumentException("No se encontró la columna precioVenta");
+        }
+
+        return columnas;
+    }
+
     private String valor(List<String> valores, Map<String, Integer> columnas, String nombre) {
         Integer idx = columnas.get(nombre);
         if (idx == null || idx >= valores.size()) {
@@ -251,6 +445,45 @@ public class MercadoLibreService {
         }
 
         return new BigDecimal(limpio).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private Integer parsearEntero(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(valor.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private LocalDate parsearFecha(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+        String limpio = valor.trim();
+        for (DateTimeFormatter formatter : List.of(
+                DateTimeFormatter.ISO_LOCAL_DATE,
+                DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+                DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+                DateTimeFormatter.ofPattern("dd-MM-yyyy"),
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+                DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
+        )) {
+            try {
+                if (formatter == DateTimeFormatter.ISO_LOCAL_DATE) {
+                    return LocalDate.parse(limpio, formatter);
+                }
+                if (limpio.length() >= 10 && limpio.contains(" ")) {
+                    return LocalDate.parse(limpio.substring(0, 10), formatter);
+                }
+                return LocalDate.parse(limpio, formatter);
+            } catch (DateTimeParseException ignored) {
+                // Intenta el siguiente formato.
+            }
+        }
+        return null;
     }
 
     private char detectarSeparador(String linea) {

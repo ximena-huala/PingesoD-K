@@ -35,6 +35,12 @@ public class MercadoLibreController {
         return ResponseEntity.ok(mercadoLibreService.importarDesdeCsv(file));
     }
 
+    @Operation(summary = "Importar ventas de MercadoLibre desde CSV")
+    @PostMapping(value = "/ventas/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<MercadoLibreImportResultDto> importarVentas(@RequestPart("file") MultipartFile file) {
+        return ResponseEntity.ok(mercadoLibreService.importarVentasDesdeCsv(file));
+    }
+
     @Operation(summary = "Listar costos importados de MercadoLibre")
     @GetMapping
     public ResponseEntity<List<MercadoLibreCostoDto>> listar() {
