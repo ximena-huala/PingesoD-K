@@ -7,6 +7,8 @@
 node_modules/
 DK-Frontend/dist/
 DK-Frontend/.env
+DK-Frontend/.env.local
+DK-Frontend/*.local
 
 # Artefactos locales fuera de DK-Backend/.gitignore
 .gradle/

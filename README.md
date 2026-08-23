@@ -19,7 +19,7 @@ Fórmula: `margen = precio - costo del producto - (comisión + logística)`
 
 ```mermaid
 flowchart LR
-  U[Usuario] --> N["nginx :8081<br/>sirve el frontend + proxy /api"]
+  U[Usuario] --> N["nginx :8082<br/>sirve el frontend + proxy /api"]
   N -->|/api/*| B["Backend<br/>Spring Boot :8080"]
   B --> P[("PostgreSQL 17")]
   B -->|API firmada HMAC| F["Falabella<br/>Seller Center"]
@@ -46,7 +46,7 @@ docker compose up --build
 
 Levanta los tres servicios (PostgreSQL ya poblado, backend y frontend) y deja la app en:
 
-http://localhost:8081/  ·  cuenta demo: `kevin@dk.cl` / `changeme`
+http://localhost:8082/  ·  cuenta demo: `kevin@dk.cl` / `changeme`
 
 | Acción | Comando |
 |--------|---------|

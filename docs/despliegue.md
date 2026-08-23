@@ -39,7 +39,7 @@ Todo corre con Docker Compose. El archivo `docker-compose.yml` (en la raíz del 
 |---|---|---|
 | `db` | PostgreSQL 17, poblado desde el dump en `docker/postgres-initdb/` | interno (5432) |
 | `backend` | Spring Boot, no expuesto al host | interno (8080) |
-| `frontend` | nginx sirve el build y hace de proxy a `/api` hacia el backend | 8081 en el host |
+| `frontend` | nginx sirve el build y hace de proxy a `/api` hacia el backend | 8082 en el host |
 
 El backend no se publica al host: solo se llega a él a través del frontend. Sobre este stack, en la VM se agrega Caddy (ver más abajo) como capa de HTTPS.
 

@@ -1,9 +1,76 @@
-name: Deploy a la VM
+# CI + CD:
+#   - El job "test" corre los tests de backend y frontend en cada push y cada PR a main.
+#   - El job "deploy" solo corre en push a main, y SOLO si "test" pasó (needs: test).
+#     Así un push con tests rotos NO llega a la VM: el job test es el portón.
+name: CI y Deploy a la VM
+
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+
 jobs:
+  test:
+    name: Tests (portón)
+    runs-on: ubuntu-latest
+
+    # Postgres para el test de contexto (@SpringBootTest levanta la app completa
+    # y Flyway crea el esquema V1..V7 sobre esta base vacía).
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: dk_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Tests backend
+        working-directory: DK-Backend
+        env:
+          DATABASE_URL: jdbc:postgresql://localhost:5432/dk_test
+          DATABASE_USERNAME: postgres
+          DATABASE_PASSWORD: postgres
+          # Secreto solo para el arranque del contexto en CI. No es de producción.
+          JWT_SECRET: ci-jwt-secret-solo-para-el-porton-de-tests-no-usar-en-produccion-0123456789
+        run: |
+          chmod +x ./gradlew
+          ./gradlew test --no-daemon
+
+      - name: Configurar Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: DK-Frontend/package-lock.json
+
+      - name: Tests frontend
+        working-directory: DK-Frontend
+        run: |
+          npm ci
+          npm test
+
   deploy:
+    name: Deploy a la VM
+    needs: test                                   # ← el portón: sin tests verdes, no despliega
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: appleboy/ssh-action@v1
