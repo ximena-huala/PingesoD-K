@@ -46,8 +46,11 @@ class HmacSignatureServiceTest {
 
     @Test
     void timestampTieneFormatoIso8601ConTimezone() {
+        // El offset puede ser numérico (ej. -04:00, cuando el server corre en
+        // horario de Chile) o "Z" (cuando corre en UTC, como el contenedor de la
+        // VM o el runner de CI). Ambos son ISO 8601 válidos y Falabella los acepta.
         assertTrue(service.generateTimestamp()
-            .matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}[+-]\\d{2}:\\d{2}"));
+            .matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}([+-]\\d{2}:\\d{2}|Z)"));
     }
 
     @Test
