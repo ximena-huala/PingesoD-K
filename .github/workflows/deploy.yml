@@ -54,10 +54,10 @@ jobs:
           chmod +x ./gradlew
           ./gradlew test --no-daemon
 
-      - name: Configurar Node 20
+      - name: Configurar Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: DK-Frontend/package-lock.json
 
