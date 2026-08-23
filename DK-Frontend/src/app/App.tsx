@@ -18,10 +18,11 @@ import {
   X,
   ArrowUpDown,
   Loader2,
+  LogOut,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import {
-  login, getDetalle, getResumen, getEstadoFalabella, descargarExcel,
+  login, logout, currentUser, getDetalle, getResumen, getEstadoFalabella, descargarExcel,
   falabellaOrders, falabellaProducts, falabellaCategories, falabellaBrands, falabellaTestFirma,
   getCanales, getCostosCanal, crearCostoCanal, actualizarCostoCanal, eliminarCostoCanal,
   importarCostosMercadoLibre, importarVentasMercadoLibre, getCostosMercadoLibre, getCostoMercadoLibrePorSku, exportarCostosMercadoLibre,
@@ -78,8 +79,10 @@ function buildChartData(rows: SaleRow[]) {
   // Si el rango abarca más de ~2 meses, agrupa por mes (YYYY-MM); si no, por día (MM-DD).
   // Así rangos largos quedan legibles y rangos cortos mantienen el detalle diario.
   const fechas = rows.map((r) => r.date);
-  const min = fechas.reduce((a, b) => (a < b ? a : b));
-  const max = fechas.reduce((a, b) => (a > b ? a : b));
+  // Guard: si el filtro deja 0 ventas, fechas queda vacío y reduce sin valor
+  // inicial reventaría ("Reduce of empty array"). Devolvemos "" y el resto degrada bien.
+  const min = fechas.length ? fechas.reduce((a, b) => (a < b ? a : b)) : "";
+  const max = fechas.length ? fechas.reduce((a, b) => (a > b ? a : b)) : "";
   const spanDias = (Date.parse(max) - Date.parse(min)) / 86400000;
   const porMes = spanDias > 62;
   const acc: Record<string, { ventas: number; margen: number }> = {};
@@ -134,14 +137,6 @@ function AnnotationLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PlaceholderBox({ label, className = "", height = "h-8" }: { label: string; className?: string; height?: string }) {
-  return (
-    <div className={`${height} ${className} bg-muted border border-dashed border-border rounded flex items-center justify-center`}>
-      <span className="text-[10px] font-mono text-muted-foreground">{label}</span>
-    </div>
-  );
-}
-
 function InputField({ label, placeholder, type = "text", value, onChange }: {
   label: string; placeholder?: string; type?: string; value?: string; onChange?: (v: string) => void;
 }) {
@@ -185,12 +180,31 @@ function SecondaryButton({ label, icon, onClick }: { label: string; icon?: React
   );
 }
 
+// ─── User badge (muestra quién tiene la sesión activa) ────────────────────────
+
+function UserBadge() {
+  const user = currentUser();
+  const nombre = user?.nombre ?? "Usuario";
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-7 h-7 rounded-full bg-foreground text-white flex items-center justify-center text-[10px] font-semibold uppercase">
+        {nombre.trim().charAt(0) || "U"}
+      </div>
+      <div className="leading-tight">
+        <p className="text-xs text-foreground font-medium">{nombre}</p>
+        {user?.email && <p className="text-[9px] font-mono text-muted-foreground">{user.email}</p>}
+      </div>
+    </div>
+  );
+}
+
 // ─── Dropdown component ───────────────────────────────────────────────────────
 
 function Dropdown({ options, value, onChange, placeholder = "Seleccionar…" }: {
   options: string[]; value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -201,26 +215,47 @@ function Dropdown({ options, value, onChange, placeholder = "Seleccionar…" }: 
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
+  const searchable = options.length > 8;
+  const filtered = searchable && query.trim()
+    ? options.filter((o) => o.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
+
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { setOpen((o) => !o); setQuery(""); }}
         className="h-9 bg-input-background border border-border rounded flex items-center px-3 gap-2 text-xs w-full hover:border-foreground/30 transition-colors"
       >
         <span className={value ? "text-foreground" : "text-muted-foreground"}>{value || placeholder}</span>
         <ChevronDown size={11} className={`text-muted-foreground ml-auto transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-border rounded-lg shadow-lg z-30 py-1 overflow-hidden">
-          {options.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => { onChange(opt); setOpen(false); }}
-              className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors ${opt === value ? "bg-muted font-medium text-foreground" : "text-muted-foreground"}`}
-            >
-              {opt}
-            </button>
-          ))}
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-border rounded-lg shadow-lg z-30 py-1">
+          {searchable && (
+            <div className="px-2 pb-1">
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar…"
+                className="w-full h-7 px-2 text-xs border border-border rounded bg-input-background outline-none focus:border-foreground/40"
+              />
+            </div>
+          )}
+          <div className="max-h-64 overflow-auto">
+            {filtered.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => { onChange(opt); setOpen(false); setQuery(""); }}
+                className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors ${opt === value ? "bg-muted font-medium text-foreground" : "text-muted-foreground"}`}
+              >
+                {opt}
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">Sin resultados</div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -261,11 +296,7 @@ function WF1Login({ onLogin }: { onLogin: () => void }) {
       <div className="h-10 bg-white border-b border-border flex items-center px-8">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-foreground rounded-[2px]" />
-          <span className="text-[11px] font-semibold text-muted-foreground tracking-widest uppercase">LOGIN</span>
-        </div>
-        <div className="ml-auto flex items-center gap-4">
-          <PlaceholderBox label="nav link" height="h-5" className="w-16" />
-          <PlaceholderBox label="nav link" height="h-5" className="w-16" />
+          <span className="text-[11px] font-semibold text-muted-foreground tracking-widest uppercase">D&K</span>
         </div>
       </div>
 
@@ -289,7 +320,6 @@ function WF1Login({ onLogin }: { onLogin: () => void }) {
                 </div>
               ))}
             </div>
-            <div className="mt-auto"><AnnotationLabel>Screen: WF-01 · Auth</AnnotationLabel></div>
           </div>
 
           <div className="bg-white border border-border rounded-xl shadow-sm p-8 flex flex-col gap-6">
@@ -310,9 +340,6 @@ function WF1Login({ onLogin }: { onLogin: () => void }) {
                 </div>
                 <InputField label="Correo electrónico" placeholder="empresa@correo.com" type="email" value={email} onChange={setEmail} />
                 <InputField label="Contraseña" placeholder="••••••••" type="password" value={password} onChange={setPassword} />
-                <div className="flex justify-end">
-                  <span className="text-[11px] text-muted-foreground underline cursor-pointer">¿Olvidaste tu contraseña?</span>
-                </div>
                 <PrimaryButton label={authing ? "Ingresando…" : "Iniciar Sesión"} full disabled={authing} onClick={async () => {
                   if (!email || !password) {
                     setToast("Completa todos los campos");
@@ -328,12 +355,6 @@ function WF1Login({ onLogin }: { onLogin: () => void }) {
                     setAuthing(false);
                   }
                 }} />
-                  <div className="flex items-center gap-2">
-                  <div className="flex-1 h-px bg-border" />
-                  <span className="text-[10px] text-muted-foreground font-mono">O</span>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
-                <PlaceholderBox label="[ SSO / OAuth Button ]" height="h-9" />
               </div>
             ) : (
               <div className="flex flex-col gap-4">
@@ -393,10 +414,10 @@ const sidebarItems = [
 
 const tableCols = ["Fecha", "Marketplace", "SKU", "Producto", "Categoría", "Precio Venta", "Costo Producto", "Costo Envío", "Comisión", "Ganancia Neta", "Margen %"];
 
-function WF2Reportes({ goTo }: { goTo: (n: number) => void }) {
+function WF2Reportes({ goTo, setInitialSub }: { goTo: (n: number) => void; setInitialSub: (s: string) => void }) {
   const [activeNav, setActiveNav] = useState("Reportes");
   const [mpFilter, setMpFilter] = useState("Todos");
-  const [catFilter, setCatFilter] = useState("Todas");
+  const [catFilter, setCatFilter] = useState("Todas las categorías");
   const [dateFrom, setDateFrom] = useState("2025-01-01");
   const [dateTo, setDateTo] = useState("2026-12-31");
   const [search, setSearch] = useState(""); // applied
@@ -481,7 +502,7 @@ function WF2Reportes({ goTo }: { goTo: (n: number) => void }) {
 
 const filtered = rows.filter((r) => {
   const mpOk = mpFilter === "Todos" || r.marketplace === mpFilter;
-  const catOk = catFilter === "Todas" || r.category === catFilter;
+  const catOk = catFilter === "Todas las categorías" || r.category === catFilter;
 
   const q = search.toLowerCase();
   const searchOk =
@@ -499,9 +520,9 @@ const filtered = rows.filter((r) => {
 const marketplacesDisponibles = [
   "Todos",
   ...MARKETPLACES.filter((marketplace) => marketplace !== "Todos"),
-  ...Array.from(new Set(rows.map((r) => r.marketplace).filter(Boolean))).sort(),
+  ...Array.from(new Set(rows.map((r) => r.marketplace).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
 ].filter((marketplace, index, list) => list.indexOf(marketplace) === index);
-const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).filter(Boolean))).sort()];
+const categorias = ["Todas las categorías", ...Array.from(new Set(rows.map((r) => r.category).filter(Boolean))).sort((a, b) => a.localeCompare(b))];
 
   const sorted = sortCol
     ? [...filtered].sort((a, b) => {
@@ -632,10 +653,11 @@ const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).f
         <div className="h-5 w-px bg-border" />
         <span className="text-xs text-muted-foreground">Reportes de Ventas</span>
         <div className="ml-auto flex items-center gap-3">
-          <PlaceholderBox label="Notificaciones" height="h-6" className="w-24" />
-          <div className="w-7 h-7 rounded-full bg-muted border border-border flex items-center justify-center">
-            <span className="text-[9px] font-mono text-muted-foreground">US</span>
-          </div>
+          <UserBadge />
+          <button onClick={() => logout()}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <LogOut size={13} /> Cerrar sesión
+          </button>
         </div>
       </div>
 
@@ -647,9 +669,9 @@ const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).f
                 key={label}
                 onClick={() => {
                   setActiveNav(label);
-              
-                  if (label === "Reportes") goTo(1);
-                  if (label === "Integraciones") goTo(2);
+                  if (label === "Dashboard" || label === "Reportes") goTo(1);
+                  if (label === "Integraciones") { setInitialSub("Integraciones API"); goTo(2); }
+                  if (label === "Configuración") { setInitialSub("Ajuste Comisiones"); goTo(2); }
                 }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-all text-left ${
                   activeNav === label ? "bg-foreground text-white" : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -886,6 +908,8 @@ const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).f
                             const active = catSortCol === key;
                             return (
                               <th key={c} onClick={() => handleCatSort(key)}
+                                tabIndex={0} role="button"
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleCatSort(key); } }}
                                 className="px-4 py-2 text-left font-semibold text-muted-foreground text-[10px] uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-foreground select-none">
                                 <span className="flex items-center gap-1">
                                   {c}
@@ -987,6 +1011,8 @@ const categorias = ["Todas", ...Array.from(new Set(rows.map((r) => r.category).f
                         const active = prodSortCol === key;
                         return (
                           <th key={col} onClick={() => handleProdSort(key)}
+                            tabIndex={0} role="button"
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleProdSort(key); } }}
                             className="px-4 py-2.5 text-left font-semibold text-muted-foreground text-[10px] uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-foreground select-none">
                             <span className="flex items-center gap-1">
                               {col}
@@ -1113,9 +1139,9 @@ function isStockFile(file: File) {
 const fmtCl = (n: number) =>
   "$" + n.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
-  const [activeNav, setActiveNav] = useState("Integraciones");
-  const [activeSubNav, setActiveSubNav] = useState("Carga CSV / XLSX");
+function WF3IngresoData({ goTo, initialSub = "Carga CSV / XLSX" }: { goTo: (n: number) => void; initialSub?: string }) {
+  const [activeNav, setActiveNav] = useState(initialSub === "Ajuste Comisiones" ? "Configuración" : "Integraciones");
+  const [activeSubNav, setActiveSubNav] = useState(initialSub);
   const [selectedMp, setSelectedMp] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
@@ -1530,10 +1556,11 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
         <div className="h-5 w-px bg-border" />
         <span className="text-xs text-muted-foreground">Ingreso de Datos & Configuración</span>
         <div className="ml-auto flex items-center gap-3">
-          <PlaceholderBox label="Notificaciones" height="h-6" className="w-24" />
-          <div className="w-7 h-7 rounded-full bg-muted border border-border flex items-center justify-center">
-            <span className="text-[9px] font-mono text-muted-foreground">US</span>
-          </div>
+          <UserBadge />
+          <button onClick={() => logout()}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <LogOut size={13} /> Cerrar sesión
+          </button>
         </div>
       </div>
 
@@ -1545,9 +1572,9 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                 key={label}
                 onClick={() => {
                   setActiveNav(label);
-              
-                  if (label === "Reportes") goTo(1);
-                  if (label === "Integraciones") goTo(2);
+                  if (label === "Dashboard" || label === "Reportes") goTo(1);
+                  if (label === "Integraciones") setActiveSubNav("Integraciones API");
+                  if (label === "Configuración") setActiveSubNav("Ajuste Comisiones");
                 }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-all text-left ${
                   activeNav === label ? "bg-foreground text-white" : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -1581,6 +1608,7 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
         <main className="flex-1 overflow-auto p-6">
           <div className="max-w-[860px] mx-auto flex flex-col gap-5">
 
+            {activeSubNav === "Carga CSV / XLSX" && (<>
             {/* Section 1: CSV Upload (carga de Stock Bsale — aporte del compañero) */}
             <SectionCard title="Carga Stock actual Bsale (XLSX / CSV)" annotation="S1 · Importación Masiva">
               <div className="flex flex-col gap-4">
@@ -1829,7 +1857,9 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                 </div>
               </div>
             </SectionCard>
+            </>)}
 
+            {activeSubNav === "Integraciones API" && (<>
             {/* Section 2: API Integration */}
             <SectionCard title="Integración con Marketplace (API)" annotation="S2 · Conexión Automática">
               <div className="grid grid-cols-2 gap-5">
@@ -1943,7 +1973,9 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                 )}
               </div>
             </SectionCard>
+            </>)}
 
+            {activeSubNav === "Ajuste Comisiones" && (<>
             {/* Section 3: Comisiones y costos por canal (real, GET/POST/PUT/DELETE /api/canales) */}
             <SectionCard title="Comisiones y Costos por Canal" annotation="S3 · Conectado a /api/canales">
               {canalesError ? (
@@ -2049,6 +2081,7 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
                 </>
               )}
             </SectionCard>
+            </>)}
 
           </div>
         </main>
@@ -2061,6 +2094,8 @@ function WF3IngresoData({ goTo }: { goTo: (n: number) => void }) {
 
 export default function App() {
   const [screen, setScreen] = useState(0);
+  // Sección con la que abre la pantalla de datos (WF3), según desde dónde se entre.
+  const [dataSub, setDataSub] = useState("Carga CSV / XLSX");
   useEffect(() => {
     const handleLogout = () => setScreen(0);
     window.addEventListener("dk:logout", handleLogout);
@@ -2070,8 +2105,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background" style={{ fontFamily: "Inter, sans-serif" }}>
       {screen === 0 && <WF1Login onLogin={() => setScreen(1)} />}
-      {screen === 1 && <WF2Reportes goTo={setScreen} />}
-      {screen === 2 && <WF3IngresoData goTo={setScreen} />}
+      {screen === 1 && <WF2Reportes goTo={setScreen} setInitialSub={setDataSub} />}
+      {screen === 2 && <WF3IngresoData goTo={setScreen} initialSub={dataSub} />}
     </div>
   );
 }

@@ -20,7 +20,18 @@ export function isAuthed(): boolean {
 export function logout(): void {
   token = null;
   localStorage.removeItem("dk_token");
+  localStorage.removeItem("dk_user");
   window.dispatchEvent(new Event("dk:logout"));
+}
+
+/** Datos del usuario logueado (nombre, email), guardados durante el login. */
+export function currentUser(): { nombre: string; email: string } | null {
+  try {
+    const raw = localStorage.getItem("dk_user");
+    return raw ? (JSON.parse(raw) as { nombre: string; email: string }) : null;
+  } catch {
+    return null;
+  }
 }
 
 function authHeaders(): Record<string, string> {
@@ -75,6 +86,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
   const data: LoginResponse = await res.json();
   token = data.token;
   localStorage.setItem("dk_token", token);
+  localStorage.setItem("dk_user", JSON.stringify({ nombre: data.nombre, email: data.email }));
   return data;
 }
 
